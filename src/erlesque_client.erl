@@ -1,4 +1,4 @@
--module(erlesque_es_conn).
+-module(erlesque_client).
 -behavior(gen_server).
 
 -export([start_link/2, stop/1]).
@@ -14,12 +14,12 @@ stop(Pid) ->
 
 
 init({Ip, Port}) ->
-    {ok, StubPid} = erlesque_stubborn_conn:start_link(self(), Ip, Port),
+    {ok, StubPid} = erlesque_conn:start_link(self(), Ip, Port),
     {ok, #state{stub_pid=StubPid, ip=Ip, port=Port}}.
 
 
 handle_call(stop, _From, State = #state{stub_pid=StubPid}) ->
-    ok = erlesque_stubborn_conn:stop(StubPid),
+    ok = erlesque_conn:stop(StubPid),
     {stop, normal, ok, State};
 
 handle_call(Msg, From, State) ->
@@ -64,7 +64,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 handle_pkg(State = #state{stub_pid=StubPid}, {pkg, heartbeat_req, CorrId, Auth, Data}) ->
     PkgBin = erlesque_pkg:to_binary({pkg, heartbeat_resp, CorrId, Auth, Data}),
-    erlesque_stubborn_conn:send(StubPid, PkgBin),
+    erlesque_conn:send(StubPid, PkgBin),
     State;
 
 handle_pkg(State, _Pkg) ->

@@ -1,5 +1,13 @@
 -module(erlesque_pkg).
--export([from_binary/1, to_binary/1]).
+-export([create/3, create/4, from_binary/1, to_binary/1]).
+
+create(Cmd, CorrId, Data) ->
+    {pkg, Cmd, CorrId, noauth, Data}.
+
+create(Cmd, CorrId, noauth, Data) ->
+    {pkg, Cmd, CorrId, noauth, Data};
+create(Cmd, CorrId, {Login, Pass}, Data) ->
+    {pkg, Cmd, CorrId, {Login, Pass}, Data}.
 
 from_binary(Binary) ->
     case Binary of

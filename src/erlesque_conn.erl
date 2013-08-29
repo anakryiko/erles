@@ -1,7 +1,7 @@
--module(erlesque_stubborn_conn).
+-module(erlesque_conn).
 -behavior(gen_server).
 
--export([start_link/3, stop/1, send/2]).
+-export([start_link/2, stop/1, send/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, code_change/3, terminate/2]).
 
 -record(settings, {ip,
@@ -14,15 +14,15 @@
                 socket=uninitialized,
                 settings}).
 
-start_link(EsPid, Ip, Port) ->
+start_link(EsPid, {node, Ip, Port}) ->
     State = #state{es_pid=EsPid, settings=#settings{ip=Ip, port=Port}},
     gen_server:start_link(?MODULE, State, []).
 
 stop(Pid) ->
     gen_server:call(Pid, stop).
 
-send(Pid, Bin) ->
-    gen_server:cast(Pid, {send, Bin}).
+send(Pid, Pkg) ->
+    gen_server:cast(Pid, {send, Pkg}).
 
 
 init(State) ->
@@ -40,7 +40,8 @@ handle_call(Msg, From, State) ->
     {noreply, State}.
 
 
-handle_cast({send, Bin}, State = #state{socket=Socket}) ->
+handle_cast({send, Pkg}, State = #state{socket=Socket}) ->
+    Bin = erlesque_pkg:to_binary(Pkg),
     PkgLen = byte_size(Bin),
     gen_tcp:send(Socket, <<PkgLen:32/unsigned-little-integer>>),
     gen_tcp:send(Socket, Bin),

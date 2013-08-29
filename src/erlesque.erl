@@ -1,8 +1,8 @@
 -module(erlesque).
--export([]).
+-export([create/1]).
 
-create(Settings = #connection_settings{}, {node, IpAddr, Port}) ->
-    thrown(not_implemented).
+create({node, Ip, Port}) ->
+    erlesque_fsm:start_link({node, Ip, Port});
 
-create(Settings = #connection_settings{}, {cluster, IpAddr, Port}) ->
-    thrown(not_implemented).
+create({cluster, ClusterDns, ManagerPort}) ->
+    throw(not_implemented).
