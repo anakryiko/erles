@@ -1,0 +1,6 @@
+syntax: glob
+
+deps/*
+ebin/*
+*.sublime-project
+*.sublime-workspace

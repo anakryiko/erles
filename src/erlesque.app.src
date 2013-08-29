@@ -1,0 +1,8 @@
+{application, erlesque, [
+    {description, "EventStore client for Erlang."},
+    {vsn, "0.0.0"},
+    {modules, [erlesque]},
+    {registered, []},
+    {env, []},
+    {applications, [kernel, stdlib]}
+]}.
