@@ -1,24 +1,24 @@
 -module(erlesque_ops).
--export([start_link/4, restart/1, pause/1, abort/1, handle_pkg/2]).
+-export([start_link/3, restart/1, pause/1, abort/1, handle_pkg/2]).
 
-start_link(ping, CorrId, ConnPid, Params) ->
-    erlesque_op_ping:start_link(CorrId, ConnPid, Params);
+start_link(ping, SysParams, OpParams) ->
+    erlesque_op_ping:start_link(SysParams, OpParams);
 
-start_link(write, CorrId, ConnPid, Params) ->
-    erlesque_op_write:start_link(CorrId, ConnPid, Params);
+start_link(write, SysParams, OpParams) ->
+    erlesque_op_base:start_link(write_events, SysParams, OpParams);
 
-start_link(Operation, CorrId, ConnPid, Params) ->
-    io:format("Unsupported operation ~p with corrId ~p, conn_pid ~p and params ~p.~n", [Operation, CorrId, ConnPid, Params]),
+start_link(Operation, SysParams, OpParams) ->
+    io:format("Unsupported operation ~p with sys_params ~p and op_params ~p.~n", [Operation, SysParams, OpParams]),
     throw(not_supported).
 
 restart(Pid) ->
-    gen_server:cast(Pid, restart).
+    Pid ! restart.
 
 pause(Pid) ->
-    gen_server:cast(Pid, pause).
+    Pid ! pause.
 
 abort(Pid) ->
-    gen_server:cast(Pid, abort).
+    Pid ! abort.
 
 handle_pkg(Pid, Pkg) ->
-    gen_server:cast(Pid, Pkg).
+    Pid ! Pkg.

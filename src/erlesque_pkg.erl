@@ -31,14 +31,16 @@ from_binary(Binary) ->
 
 to_binary({pkg, Cmd, CorrId, noauth, Data}) ->
     EncCmd = encode_cmd(Cmd),
-    <<EncCmd:8, 0:8, CorrId/binary, Data/binary>>;
+    BinData = iolist_to_binary(Data),
+    <<EncCmd:8, 0:8, CorrId/binary, BinData/binary>>;
 
 to_binary({pkg, Cmd, CorrId, {Login, Pass}, Data}) ->
     EncCmd = encode_cmd(Cmd),
     LoginLen = byte_size(Login),
     PassLen = byte_size(Pass),
+    BinData = iolist_to_binary(Data),
     <<EncCmd:8, 1:8, CorrId/binary,
-      LoginLen:8, Login/binary, PassLen:8, Pass/binary, Data/binary>>.
+      LoginLen:8, Login/binary, PassLen:8, Pass/binary, BinData/binary>>.
 
 decode_cmd(16#01) -> heartbeat_req;
 decode_cmd(16#02) -> heartbeat_resp;

@@ -1,45 +1,36 @@
 -module(erlesque_op_ping).
--behavior(gen_server).
+-export([start_link/2]).
 
--export([start_link/3]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, code_change/3, terminate/2]).
+start_link(SysParams, OpParams) ->
+    {ok, spawn_link(fun() -> ping(SysParams, OpParams, 5) end)}.
 
-start_link(CorrId, ConnPid, Params) ->
-    gen_server:start_link(?MODULE, {CorrId, ConnPid, Params}, []).
-
-init({CorrId, ConnPid, _Params}) ->
+ping(SysParams={CorrId, ClientPid, ConnPid}, OpParams, TrialsLeft) ->
+    OperationTimeout = 3000,
     erlesque_conn:send(ConnPid, erlesque_pkg:create(ping, CorrId, <<1,2,3>>)),
-    {ok, State}.
+    receive
+        {pkg, pong, CorrId, _Auth, _Data} ->
+            ClientPid ! {op_completed, CorrId, pong};
+        pause ->
+            wait_for_connection(SysParams, OpParams, TrialsLeft-1);
+        abort ->
+            ClientPid ! {op_completed, CorrId, {error, aborted}};
+        Msg ->
+            io:format("Unexpected message received: ~p.~n", [Msg])
+        after OperationTimeout ->
+            ClientPid ! {op_completed, CorrId, {error, timedout}}
+    end.
 
+wait_for_connection(_SysParams={CorrId, ClientPid, _ConnPid}, _OpParams, 0) ->
+    ClientPid ! {op_completed, CorrId, {error, retries_limit}};
 
-handle_call(Msg, From, State) ->
-    io:format("Unexpected CALL message ~p from ~p, state ~p~n", [Msg, From, State]),
-    {noreply, State}.
-
-handle_cast(restart, Msg, State) ->
-    {noreply, State}.
-
-handle_cast(pause, Msg, State) ->
-    {noreply, State}.
-
-handle_cast(abort, Msg, State) ->
-    {noreply, State}.
-
-handle_cast({pkg, pong, _CorrId, _Auth, _Data}, Msg, {_, _}) ->
-
-    {noreply, State}.
-
-handle_cast(Msg, State) ->
-    io:format("Unexpected CAST message ~p, state ~p~n", [Msg, State]),
-    {noreply, State}.
-
-
-handle_info(Msg, State) ->
-    io:format("Unexpected INFO message ~p, state ~p~n", [Msg, State]),
-    {noreply, State}.
-
-terminate(normal, _State) ->
-    ok.
-
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+wait_for_connection(SysParams={CorrId, ClientPid, _ConnPid}, OpParams, TrialsLeft) ->
+    receive
+        {pkg, pong, CorrId, _Auth, _Data} ->
+            ClientPid ! {op_completed, CorrId, pong};
+        restart ->
+            ping(SysParams, OpParams, TrialsLeft);
+        abort ->
+            ClientPid ! {op_completed, CorrId, {error, aborted}};
+        Msg ->
+            io:format("Unexpected message received: ~p.~n", [Msg])
+    end.

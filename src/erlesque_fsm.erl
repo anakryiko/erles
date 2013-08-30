@@ -1,14 +1,12 @@
 -module(erlesque_fsm).
 -behavior(gen_fsm).
 
--export([start_link/1, stop/1]).
--export([ping/1]).
+-export([start_link/1]).
 
 -export([init/1, handle_sync_event/4, handle_event/3, handle_info/3, code_change/4, terminate/3]).
 -export([connecting/2, connecting/3, connected/2, connected/3]).
 
 -record(state, {conn_pid,
-                ops_sup_pid,
                 waiting_ops = queue:new(),
                 active_ops = dict:new()}).
 
@@ -18,17 +16,9 @@ start_link(ConnSettings = {node, _Ip, _Port}) ->
 start_link(ConnSettings = {cluster, _DnsEntry, _ManagerPort}) ->
     gen_fsm:start_link(?MODULE, ConnSettings, []).
 
-stop(Pid) ->
-    gen_fsm:send_all_state_sync_event(Pid, close).
-
-ping(Pid) ->
-    gen_fsm:sync_send_event(Pid, {op, ping, []}, infinity).
-
-
 init(ConnSettings) ->
-    {ok, SupPid} = erlesque_ops_sup:start_link(),
     {ok, ConnPid} = erlesque_conn:start_link(self(), ConnSettings),
-    {ok, connecting, #state{conn_pid=ConnPid, ops_sup_pid=SupPid}}.
+    {ok, connecting, #state{conn_pid=ConnPid}}.
 
 
 connecting({op, Operation, Params}, From, StateData=#state{waiting_ops=WaitingOps}) ->
@@ -44,11 +34,13 @@ connecting(Msg, StateData) ->
     {next_state, connecting, StateData}.
 
 
-connected({op, Operation, Params}, From, StateData=#state{ops_sup_pid=SupPid, conn_pid=ConnPid, active_ops=ActiveOps}) ->
+connected({op, Operation, Params}, From, StateData=#state{conn_pid=ConnPid, active_ops=ActiveOps}) ->
+    %io:format("New op accepted op ~p, params ~p, ops ~p~n", [Operation, Params, ActiveOps]),
     CorrId = erlesque_utils:create_uuid_v4(),
-    {ok, Pid} = erlesque_ops_sup:start_operation(SupPid, Operation, CorrId, ConnPid, Params),
+    {ok, Pid} = erlesque_ops:start_link(Operation, {CorrId, self(), ConnPid}, Params),
     NewActiveOps = dict:store(CorrId, {op, From, Pid}, ActiveOps),
-    {next_state, connecting, StateData#state{active_ops=NewActiveOps}};
+    %io:format("New op started corrid ~p, op ~p, params ~p, ops ~p~n", [CorrId, Operation, Params, NewActiveOps]),
+    {next_state, connected, StateData#state{active_ops=NewActiveOps}};
 
 connected(Msg, From, StateData) ->
     io:format("Unexpected SYNC EVENT ~p from ~p, state name ~p, state data ~p~n", [Msg, From, connected, StateData]),
@@ -100,12 +92,14 @@ handle_info({closed, Reason}, _StateName, StateData=#state{active_ops=ActiveOps,
 
 
 handle_info({op_completed, CorrId, Res}, StateName, StateData=#state{active_ops=Ops}) ->
-    complete_operation(Ops, CorrId, Res),
-    {next_state, StateName, StateData};
+    NewOps = complete_operation(Ops, CorrId, Res),
+    %io:format("Op_completed: corrid ~p, res ~p, new ops ~p~n", [CorrId, Res, NewOps]),
+    {next_state, StateName, StateData#state{active_ops=NewOps}};
 
 handle_info({op_restarted, OldCorrId, NewCorrId}, StateName, StateData=#state{active_ops=Ops}) ->
-    restart_operation(Ops, OldCorrId, NewCorrId),
-    {next_state, StateName, StateData};
+    NewOps = restart_operation(Ops, OldCorrId, NewCorrId),
+    %io:format("Op_restarted: oldcorrid ~p, newcorrid ~p, new ops ~p~n", [OldCorrId, NewCorrId, NewOps]),
+    {next_state, StateName, StateData#state{active_ops=NewOps}};
 
 
 handle_info(Msg, StateName, StateData) ->
@@ -114,6 +108,7 @@ handle_info(Msg, StateName, StateData) ->
 
 
 terminate(normal, _StateName, _StateData) ->
+    io:format("Terminated!~n"),
     ok.
 
 code_change(_OldVsn, StateName, StateData, _Extra) ->
@@ -121,14 +116,18 @@ code_change(_OldVsn, StateName, StateData, _Extra) ->
 
 
 handle_pkg(State=#state{conn_pid=ConnPid}, {pkg, heartbeat_req, CorrId, _Auth, Data}) ->
-    Pkg = erlesque_pkg:create(heartbeat_resp, CorrId, Data}),
-    erlesque_conn:send(ConnPid, PkgBin),
+    Pkg = erlesque_pkg:create(heartbeat_resp, CorrId, Data),
+    erlesque_conn:send(ConnPid, Pkg),
     State;
 
 handle_pkg(State=#state{active_ops=Ops}, Pkg={pkg, _Cmd, CorrId, _Auth, _Data}) ->
+    %io:format("Package arrived: ~p~n", [Pkg]),
     case dict:find(CorrId, Ops) of
-        {ok, {op, _From, Pid}} -> erlesque_ops:handle_pkg(Pid, Pkg);
-        error -> ok
+        {ok, {op, _From, Pid}} ->
+            erlesque_ops:handle_pkg(Pid, Pkg);
+        error ->
+            %io:format("No operation with corrid ~p, pkg ~p, ops ~p~n", [CorrId, Pkg, Ops]),
+            ok
     end,
     State.
 
@@ -159,6 +158,7 @@ complete_operation(Ops, CorrId, Res) ->
             gen_fsm:reply(From, Res),
             dict:erase(CorrId, Ops);
         error ->
+            io:format("No operation for completion with corrid ~p, res ~p, ops ~p~n", [CorrId, Res, Ops]),
             Ops
     end.
 
@@ -167,5 +167,6 @@ restart_operation(Ops, OldCorrId, NewCorrId) ->
         {ok, {op, From, Pid}} ->
             dict:store(NewCorrId, {op, From, Pid}, dict:erase(OldCorrId, Ops));
         error ->
+            io:format("No operation for restart with oldcorrid ~p, newcorrid ~p, ops ~p~n", [OldCorrId, NewCorrId, Ops]),
             Ops
     end.
