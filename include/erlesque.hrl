@@ -14,3 +14,10 @@
                               connected,
                               disconnected,
                               reconnecting}).
+
+-record(event_data, {event_id = erlesque_utils:create_uuid_v4(),
+                     event_type,
+                     is_json = false,
+                     data :: binary(),
+                     metadata :: binary()
+      }).

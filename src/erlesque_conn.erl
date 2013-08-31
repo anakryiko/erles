@@ -41,6 +41,10 @@ handle_call(Msg, From, State) ->
 
 
 handle_cast({send, Pkg}, State = #state{socket=Socket}) ->
+    case Pkg of
+        {pkg, heartbeat_resp, _, _, _} -> ok;
+        _ -> io:format("Package sent: ~p~n", [Pkg])
+    end,
     Bin = erlesque_pkg:to_binary(Pkg),
     PkgLen = byte_size(Bin),
     gen_tcp:send(Socket, <<PkgLen:32/unsigned-little-integer>>),

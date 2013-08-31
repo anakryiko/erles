@@ -10,13 +10,13 @@ start_link() ->
 stop(SupPid) ->
     supervisor:stop(SupPid).
 
-start_operation(SupPid, Operation, SysParams, OpParams) ->
-    supervisor:start_child(SupPid, [Operation, SysParams, OpParams]).
+start_operation(SupPid, ReqCmd, SysParams, OpParams) ->
+    supervisor:start_child(SupPid, [ReqCmd, SysParams, OpParams]).
 
 
 init(nothing) ->
     {ok, {{simple_one_for_one, 3, 60},
-          [{operation,
+          [{erlesque_ops,
             {erlesque_ops, start_link, []},
-            transient, infinity, worker, [erlesque_operation]}
+            transient, infinity, worker, [erlesque_ops]}
           ]}}.
