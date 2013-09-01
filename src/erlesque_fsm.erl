@@ -6,6 +6,10 @@
 -export([init/1, handle_sync_event/4, handle_event/3, handle_info/3, code_change/4, terminate/3]).
 -export([connecting/2, connecting/3, connected/2, connected/3]).
 
+-define(OPERATION_TIMEOUT, 7000).
+-define(OPERATION_TRIALS, 10).
+-define(RETRY_DELAY, 500).
+
 -record(state, {conn_pid,
                 sup_pid,
                 waiting_ops = queue:new(),
@@ -49,7 +53,7 @@ connecting(Msg, State) ->
 
 connected({op, Operation, Params}, From, State=#state{sup_pid=SupPid, conn_pid=ConnPid, active_ops=ActiveOps}) ->
     CorrId = erlesque_utils:create_uuid_v4(),
-    {ok, Pid} = erlesque_ops_sup:start_operation(SupPid, Operation, {CorrId, self(), ConnPid, 7000, 10, 500}, Params),
+    {ok, Pid} = erlesque_ops_sup:start_operation(SupPid, Operation, {CorrId, self(), ConnPid, ?OPERATION_TIMEOUT, ?OPERATION_TRIALS, ?RETRY_DELAY}, Params),
     erlesque_ops:connected(Pid),
     NewActiveOps = dict:store(CorrId, {op, From, Pid}, ActiveOps),
     io:format("New op started corrid ~p, op ~p, params ~p~n", [CorrId, Operation, Params]),

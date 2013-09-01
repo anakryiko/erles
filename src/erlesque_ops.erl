@@ -300,7 +300,7 @@ create_package(CorrId, Auth, read_stream_events_backward, {StreamId, FromEventNu
     Bin = erlesque_clientapi_pb:encode_readstreamevents(Dto),
     erlesque_pkg:create(read_stream_events_backward, CorrId, Auth, Bin);
 
-create_package(CorrId, Auth, read_all_events_forward, {CommitPos, PreparePos, MaxCount, ResolveLinks, RequireMaster}) ->
+create_package(CorrId, Auth, read_all_events_forward, {{tfpos, CommitPos, PreparePos}, MaxCount, ResolveLinks, RequireMaster}) ->
     Dto = #readallevents{
         commit_position = CommitPos,
         prepare_position = PreparePos,
@@ -311,7 +311,7 @@ create_package(CorrId, Auth, read_all_events_forward, {CommitPos, PreparePos, Ma
     Bin = erlesque_clientapi_pb:encode_readallevents(Dto),
     erlesque_pkg:create(read_all_events_forward, CorrId, Auth, Bin);
 
-create_package(CorrId, Auth, read_all_events_backward, {CommitPos, PreparePos, MaxCount, ResolveLinks, RequireMaster}) ->
+create_package(CorrId, Auth, read_all_events_backward, {{tfpos, CommitPos, PreparePos}, MaxCount, ResolveLinks, RequireMaster}) ->
     Dto = #readallevents{
         commit_position = CommitPos,
         prepare_position = PreparePos,
@@ -326,7 +326,63 @@ create_package(CorrId, Auth, read_all_events_backward, {CommitPos, PreparePos, M
 deserialize_result(write_events, write_events_completed, Data) ->
     Dto = erlesque_clientapi_pb:decode_writeeventscompleted(Data),
     case Dto#writeeventscompleted.result of
-        'Success' ->              {complete, {ok, Dto#writeeventscompleted.first_event_number}};
+        'Success' -> {complete, ok};
+        Other -> decode_write_failure(Other)
+    end;
+
+deserialize_result(transaction_start, transaction_start_completed, Data) ->
+    Dto = erlesque_clientapi_pb:decode_transactionstartcompleted(Data),
+    case Dto#transactionstartcompleted.result of
+        'Success' -> {complete, {ok, Dto#transactionstartcompleted.transaction_id}};
+        Other -> decode_write_failure(Other)
+    end;
+
+deserialize_result(transaction_write, transaction_write_completed, Data) ->
+    Dto = erlesque_clientapi_pb:decode_transactionwritecompleted(Data),
+    case Dto#transactionwritecompleted.result of
+        'Success' -> {complete, ok};
+        Other -> decode_write_failure(Other)
+    end;
+
+deserialize_result(transaction_commit, transaction_commit_completed, Data) ->
+    Dto = erlesque_clientapi_pb:decode_transactioncommitcompleted(Data),
+    case Dto#transactioncommitcompleted.result of
+        'Success' -> {complete, ok};
+        Other -> decode_write_failure(Other)
+    end;
+
+deserialize_result(delete_stream, delete_stream_completed, Data) ->
+    Dto = erlesque_clientapi_pb:decode_deletestreamcompleted(Data),
+    case Dto#deletestreamcompleted.result of
+        'Success' -> {complete, ok};
+        Other -> decode_write_failure(Other)
+    end;
+
+deserialize_result(read_event, read_event_completed, Data) ->
+    Dto = erlesque_clientapi_pb:decode_readeventcompleted(Data),
+    case Dto#readeventcompleted.result of
+        'Success' ->       {complete, {ok, resolved_event(Dto#readeventcompleted.event)}};
+        'NotFound' ->      {complete, {error, no_event}};
+        'NoStream' ->      {complete, {error, no_stream}};
+        'StreamDeleted' -> {complete, {error, stream_deleted}};
+        'Error' ->         {complete, {error, Dto#readeventcompleted.error}};
+        'AccessDenied' ->  {complete, {error, access_denied}}
+    end;
+
+deserialize_result(read_stream_events_forward, read_stream_events_forward_completed, Data) ->
+    deserialize_streameventscompleted(Data);
+
+deserialize_result(read_stream_events_backward, read_stream_events_backward_completed, Data) ->
+    deserialize_streameventscompleted(Data);
+
+deserialize_result(read_all_events_forward, read_all_events_forward_completed, Data) ->
+    deserialize_alleventscompleted(Data);
+
+deserialize_result(read_all_events_backward, read_all_events_backward_completed, Data) ->
+    deserialize_alleventscompleted(Data).
+
+decode_write_failure(OperationResult) ->
+    case OperationResult of
         'PrepareTimeout' ->       {retry, prepare_timeout};
         'CommitTimeout' ->        {retry, commit_timeout};
         'ForwardTimeout' ->       {retry, forward_timeout};
@@ -334,23 +390,35 @@ deserialize_result(write_events, write_events_completed, Data) ->
         'StreamDeleted' ->        {complete, {error, stream_deleted}};
         'InvalidTransaction' ->   {complete, {error, invalid_transaction}};
         'AccessDenied' ->         {complete, {error, access_denied}}
-    end;
+    end.
 
-deserialize_result(transaction_start, transaction_start_completed, Data) ->
-    erlesque_clientapi_pb:decode_transactionstartcompleted(Data);
-deserialize_result(transaction_write, transaction_write_completed, Data) ->
-    erlesque_clientapi_pb:decode_transactionwritecompleted(Data);
-deserialize_result(transaction_commit, transaction_commit_completed, Data) ->
-    erlesque_clientapi_pb:decode_transactioncommitcompleted(Data);
-deserialize_result(delete_stream, delete_stream_completed, Data) ->
-    erlesque_clientapi_pb:decode_deletestreamcompleted(Data);
-deserialize_result(read_event, read_event_completed, Data) ->
-    erlesque_clientapi_pb:decode_readeventcompleted(Data);
-deserialize_result(read_stream_events_forward, read_stream_events_forward_completed, Data) ->
-    erlesque_clientapi_pb:decode_readstreameventsforwardcompleted(Data);
-deserialize_result(read_stream_events_backward, read_stream_events_backward_completed, Data) ->
-    erlesque_clientapi_pb:decode_readstreameventsbackwardcompleted(Data);
-deserialize_result(read_all_events_forward, read_all_events_forward_completed, Data) ->
-    erlesque_clientapi_pb:decode_readalleventsforwardcompleted(Data);
-deserialize_result(read_all_events_backward, read_all_events_backward_completed, Data) ->
-    erlesque_clientapi_pb:decode_readalleventsbackwardcompleted(Data).
+deserialize_streameventscompleted(Data) ->
+    Dto = erlesque_clientapi_pb:decode_readstreameventscompleted(Data),
+    case Dto#readstreameventscompleted.result of
+        'Success' ->       {complete, {ok, {
+            resolved_events(Dto#readstreameventscompleted.events),
+            Dto#readstreameventscompleted.next_event_number,
+            Dto#readstreameventscompleted.is_end_of_stream
+        }}};
+        'NoStream' ->      {complete, {error, no_stream}};
+        'StreamDeleted' -> {complete, {error, stream_deleted}};
+        'Error' ->         {complete, {error, Dto#readstreameventscompleted.error}};
+        'AccessDenied' ->  {complete, {error, access_denied}}
+    end.
+
+deserialize_alleventscompleted(Data) ->
+    Dto = erlesque_clientapi_pb:decode_readalleventscompleted(Data),
+    case Dto#readalleventscompleted.result of
+        'Success' ->       {complete, {ok, {
+            resolved_events(Dto#readalleventscompleted.events),
+            {tfpos, Dto#readalleventscompleted.next_commit_position, Dto#readalleventscompleted.next_prepare_position}
+        }}};
+        'Error' ->         {complete, {error, Dto#readalleventscompleted.error}};
+        'AccessDenied' ->  {complete, {error, access_denied}}
+    end.
+
+resolved_events(Events) ->
+    lists:map(fun(E) -> resolved_event(E) end, Events).
+
+resolved_event(_EventDto) ->
+    not_implemented.
