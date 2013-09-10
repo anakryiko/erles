@@ -131,15 +131,14 @@ connecting(Msg, State) ->
     {next_state, connecting, State}.
 
 
-connected({op, temp, Operation, Params}, From, State=#state{waiting_ops=WaitingOps})
-        when State#state.max_server_ops =:= 0 ->
-    WaitOp = #wait_op{type=temp, from=From, op=Operation, params=Params},
-    NewWaitingOps = queue:in(WaitOp, WaitingOps),
-    {next_state, connected, State#state{waiting_ops=NewWaitingOps}};
-
 connected({op, Type, Operation, Params}, From, State) ->
     WaitOp = #wait_op{type=Type, from=From, op=Operation, params=Params},
-    NewState = start_operation(WaitOp, State),
+    NewState = case State#state.max_server_ops =:= 0 of
+        true ->
+            State#state{waiting_ops=queue:in(WaitOp, State#state.waiting_ops)};
+        false ->
+            start_operation(WaitOp, State)
+    end,
     {next_state, connected, NewState};
 
 connected(Msg, From, State) ->
@@ -169,7 +168,7 @@ handle_event({op_completed, CorrId}, StateName, State=#state{active_ops=Ops}) ->
         {ok, #act_op{type=temp}} ->
             State2 = State#state{active_ops=dict:erase(CorrId, Ops),
                                  max_server_ops=State#state.max_server_ops+1},
-            start_pending_operations(State2);
+            start_waiting_operations(State2);
         {ok, #act_op{type=perm}} ->
             State#state{active_ops=dict:erase(CorrId, Ops)};
         error ->
@@ -202,7 +201,7 @@ handle_info({package, Pkg}, StateName, State) ->
 handle_info({connected, {_Ip, _Port}}, connecting, State=#state{}) ->
     Restart = fun(_, #act_op{pid=Pid}, _) -> erlesque_ops:connected(Pid) end,
     dict:fold(Restart, ok, State#state.active_ops),
-    NewState = start_pending_operations(State),
+    NewState = start_waiting_operations(State),
     {next_state, connected, NewState};
 
 handle_info({disconnected, {_Ip, _Port}, _Reason}, connected, State=#state{active_ops=Ops}) ->
@@ -247,6 +246,19 @@ handle_pkg(State=#state{active_ops=Ops}, Pkg={pkg, _Cmd, CorrId, _Auth, _Data}) 
     end,
     State.
 
+start_waiting_operations(State=#state{max_server_ops=0}) ->
+    State;
+
+start_waiting_operations(State=#state{})
+        when State#state.max_server_ops >= 0 ->
+    case queue:out(State#state.waiting_ops) of
+        {{value, Op=#wait_op{}}, NewWaitingOps} ->
+            NewState = start_operation(Op, State#state{waiting_ops=NewWaitingOps}),
+            start_waiting_operations(NewState);
+        {empty, _} ->
+            State
+    end.
+
 start_operation(Op=#wait_op{}, State=#state{}) ->
     CorrId = erlesque_utils:create_uuid_v4(),
     SysParams = #sys_params{corr_id=CorrId,
@@ -271,23 +283,10 @@ start_operation(Op=#wait_op{}, State=#state{}) ->
     io:format("New op started CorrId: ~p~nOp: ~p~nSysparams: ~p~n", [CorrId, Op, SysParams]),
     State#state{active_ops=ActiveOps, max_server_ops=MaxServerOps}.
 
-start_pending_operations(State=#state{max_server_ops=0}) ->
-    State;
-
-start_pending_operations(State=#state{})
-        when State#state.max_server_ops >= 0 ->
-    case queue:out(State#state.waiting_ops) of
-        {{value, Op=#wait_op{}}, NewWaitingOps} ->
-            NewState = start_operation(Op, State#state{waiting_ops=NewWaitingOps}),
-            start_pending_operations(NewState);
-        {empty, _} ->
-            State
-    end.
-
 abort_operations(ActiveOps, WaitingOps, Reason) ->
     Abort = fun(_, #act_op{pid=Pid}, _) -> erlesque_ops:aborted(Pid, Reason) end,
     ReplyAbort = fun(#wait_op{from=From}, _) -> gen_fsm:reply(From, {error, Reason}) end,
     dict:fold(Abort, ok, ActiveOps),
-    list:fold(ReplyAbort, ok, dict:to_list(WaitingOps)),
+    lists:foldl(ReplyAbort, ok, queue:to_list(WaitingOps)),
     {ActiveOps, WaitingOps}.
 

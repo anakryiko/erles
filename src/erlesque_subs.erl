@@ -151,7 +151,7 @@ subscribed({pkg, Cmd, CorrId, _Auth, Data}, State=#state{corr_id=CorrId}) ->
     case Cmd of
         stream_event_appeared ->
             Dto = erlesque_clientapi_pb:decode_streameventappeared(Data),
-            Event = resolved_event(Dto#streameventappeared.event),
+            Event = erlesque_utils:resolved_event(Dto#streameventappeared.event),
             notify(State, {event, Event}),
             {next_state, subscribed, State};
         subscription_dropped ->
@@ -172,7 +172,8 @@ subscribed({aborted, Reason}, State=#state{}) ->
     notify(State, {unsubscribed, {aborted, Reason}}),
     complete(State);
 
-subscribed({subscriber_down, _Reason}, State=#state{}) ->
+subscribed({subscriber_down, Reason}, State=#state{}) ->
+    notify(State, {unsubscribed, {subscriber_down, Reason}}),
     complete(State);
 
 subscribed(Msg, State) ->
@@ -202,6 +203,7 @@ terminate(normal, _StateName, _State) ->
 
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
+
 
 issue_request(State=#state{}) ->
     Dto = #subscribetostream{
@@ -269,9 +271,6 @@ retry(Reason, State) ->
 
 cancel_timer(none) -> ok;
 cancel_timer(TimerRef) -> erlang:cancel_timer(TimerRef).
-
-resolved_event(_EventDto) ->
-    not_implemented.
 
 drop_reason(Reason) ->
     case Reason of

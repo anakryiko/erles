@@ -20,7 +20,7 @@ connect(Destination) -> start_link(Destination).
 connect(Destination, Options) -> start_link(Destination, Options).
 
 close(Pid) ->
-    gen_fsm:send_all_state_sync_event(Pid, close).
+    gen_fsm:sync_send_all_state_event(Pid, close).
 
 start_link(Destination = {node, _Ip, _Port}) ->
     erlesque_fsm:start_link(Destination).
