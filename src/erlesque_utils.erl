@@ -90,9 +90,9 @@ resolved_event(E = #resolvedindexedevent{}) ->
     event_rec(E#resolvedindexedevent.event).
 
 event_rec(E = #eventrecord{}) ->
-    #event{stream_id    = E#eventrecord.event_stream_id,
+    #event{stream_id    = list_to_binary(E#eventrecord.event_stream_id),
            event_number = E#eventrecord.event_number,
            event_id     = E#eventrecord.event_id,
-           event_type   = E#eventrecord.event_type,
+           event_type   = list_to_binary(E#eventrecord.event_type),
            data         = E#eventrecord.data,
            metadata     = E#eventrecord.metadata}.

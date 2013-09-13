@@ -2,6 +2,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("erlesque.hrl").
 
+-compile(export_all).
+
 reqs_test_() ->
     {setup,
      fun setup/0,
@@ -118,11 +120,34 @@ reads(C) ->
     [?_assertEqual({ok, RE1}, erlesque:read_event(C, S, 0)),
      ?_assertEqual({ok, RE2}, erlesque:read_event(C, S, 1)),
      ?_assertEqual({ok, RE3}, erlesque:read_event(C, S, 2)),
-     ?_assertEqual({ok, RE3}, erlesque:read_event(C, S, last))
+     ?_assertEqual({ok, RE3}, erlesque:read_event(C, S, last)),
+     ?_assertEqual({ok, RE3}, erlesque:read_event(C, S, -1)),
+
+     ?_assertEqual({ok, {[RE1], 1, false}},           erlesque:read_stream_forward(C, S, 0, 1)),
+     ?_assertEqual({ok, {[RE2], 2, false}},           erlesque:read_stream_forward(C, S, 1, 1)),
+     ?_assertEqual({ok, {[RE3], 3, true}},            erlesque:read_stream_forward(C, S, 2, 1)),
+     ?_assertEqual({ok, {[], 3, true}},               erlesque:read_stream_forward(C, S, 3, 1)),
+     ?_assertEqual({ok, {[RE1, RE2], 2, false}},      erlesque:read_stream_forward(C, S, 0, 2)),
+     ?_assertEqual({ok, {[RE2, RE3], 3, true}},       erlesque:read_stream_forward(C, S, 1, 2)),
+     ?_assertEqual({ok, {[RE3], 3, true}},            erlesque:read_stream_forward(C, S, 2, 2)),
+     ?_assertEqual({ok, {[], 3, true}},               erlesque:read_stream_forward(C, S, 3, 2)),
+
+     ?_assertEqual({ok, {[RE1], -1, true}},           erlesque:read_stream_backward(C, S, 0, 1)),
+     ?_assertEqual({ok, {[RE2], 0, false}},           erlesque:read_stream_backward(C, S, 1, 1)),
+     ?_assertEqual({ok, {[RE3], 1, false}},           erlesque:read_stream_backward(C, S, 2, 1)),
+     ?_assertEqual({ok, {[], 2, false}},              erlesque:read_stream_backward(C, S, 3, 1)),
+     ?_assertEqual({ok, {[RE1], -1, true}},           erlesque:read_stream_backward(C, S, 0, 2)),
+     ?_assertEqual({ok, {[RE2, RE1], -1, true}},      erlesque:read_stream_backward(C, S, 1, 2)),
+     ?_assertEqual({ok, {[RE3, RE2], 0, false}},      erlesque:read_stream_backward(C, S, 2, 2)),
+     ?_assertEqual({ok, {[RE3], 1, false}},           erlesque:read_stream_backward(C, S, 3, 2)),
+     ?_assertEqual({ok, {[RE3, RE2, RE1], -1, true}}, erlesque:read_stream_backward(C, S, 5, 100)),
+     ?_assertEqual({ok, {[RE3, RE2], 0, false}},      erlesque:read_stream_backward(C, S, last, 2)),
+     ?_assertEqual({ok, {[RE3, RE2], 0, false}},      erlesque:read_stream_backward(C, S, -1, 2))
     ].
 
 create_event() ->
-    #event_data{event_type = <<"test-type">>, data = <<"some data">>}.
+    #event_data{event_type = <<"test-type">>, data = <<"some data">>, metadata = <<"some meta">>}.
 
 gen_stream_id() ->
-    iolist_to_binary(io_lib:format("esq-test-~s", [erlesque_utils:gen_uuid()])).
+    UuidStr = erlesque_utils:uuid_to_string(erlesque_utils:gen_uuid()),
+    iolist_to_binary(io_lib:format("esq-test-~s", [UuidStr])).

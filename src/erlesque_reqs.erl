@@ -216,7 +216,7 @@ create_package(CorrId, Auth, write_events, {StreamId, ExpectedVersion, Events, R
         expected_version = ExpectedVersion,
         events = lists:map(fun(X) ->
             #newevent{event_id = X#event_data.event_id,
-                      event_type = X#event_data.event_id,
+                      event_type = X#event_data.event_type,
                       data_content_type = bool_to_int(X#event_data.is_json),
                       metadata_content_type = 0,
                       data = X#event_data.data,
@@ -241,7 +241,7 @@ create_package(CorrId, Auth, transaction_write, {TransactionId, Events, RequireM
         transaction_id = TransactionId,
         events = lists:map(fun(X) ->
             #newevent{event_id = X#event_data.event_id,
-                      event_type = X#event_data.event_id,
+                      event_type = X#event_data.event_type,
                       data_content_type = bool_to_int(X#event_data.is_json),
                       metadata_content_type = 0,
                       data = X#event_data.data,
