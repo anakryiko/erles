@@ -182,7 +182,7 @@ retry(Reason, State) ->
     case Retries >= 0 of
         true ->
             cancel_timer(State#state.timer_ref),
-            NewCorrId = erlesque_utils:create_uuid_v4(),
+            NewCorrId = erlesque_utils:gen_uuid(),
             erlesque_fsm:operation_restarted(State#state.esq_pid, State#state.corr_id, NewCorrId),
             TimerRef = erlang:start_timer(State#state.retry_delay, self(), retry),
             {next_state, retry_pending, State#state{corr_id=NewCorrId, retries=Retries, timer_ref=TimerRef}};
@@ -267,7 +267,7 @@ create_package(CorrId, Auth, delete_stream, {StreamId, ExpectedVersion, RequireM
         require_master = RequireMaster
     },
     Bin = erlesque_clientapi_pb:encode_deletestream(Dto),
-    erlesque_pkg:create(deletestream, CorrId, Auth, Bin);
+    erlesque_pkg:create(delete_stream, CorrId, Auth, Bin);
 
 create_package(CorrId, Auth, read_event, {StreamId, EventNumber, ResolveLinks, RequireMaster}) ->
     Dto = #readevent{
@@ -326,8 +326,9 @@ create_package(CorrId, Auth, read_all_events_backward, {{tfpos, CommitPos, Prepa
 
 deserialize_result(write_events, write_events_completed, Data) ->
     Dto = erlesque_clientapi_pb:decode_writeeventscompleted(Data),
+    io:format("~p~n", [Dto]),
     case Dto#writeeventscompleted.result of
-        'Success' -> {complete, ok};
+        'Success' -> {complete, {ok, Dto#writeeventscompleted.last_event_number}};
         Other -> decode_write_failure(Other)
     end;
 
@@ -348,7 +349,7 @@ deserialize_result(transaction_write, transaction_write_completed, Data) ->
 deserialize_result(transaction_commit, transaction_commit_completed, Data) ->
     Dto = erlesque_clientapi_pb:decode_transactioncommitcompleted(Data),
     case Dto#transactioncommitcompleted.result of
-        'Success' -> {complete, ok};
+        'Success' -> {complete, {ok, Dto#transactioncommitcompleted.last_event_number}};
         Other -> decode_write_failure(Other)
     end;
 
@@ -362,7 +363,7 @@ deserialize_result(delete_stream, delete_stream_completed, Data) ->
 deserialize_result(read_event, read_event_completed, Data) ->
     Dto = erlesque_clientapi_pb:decode_readeventcompleted(Data),
     case Dto#readeventcompleted.result of
-        'Success' ->       {complete, {ok, resolved_event(Dto#readeventcompleted.event)}};
+        'Success' ->       {complete, {ok, erlesque_utils:resolved_event(Dto#readeventcompleted.event)}};
         'NotFound' ->      {complete, {error, no_event}};
         'NoStream' ->      {complete, {error, no_stream}};
         'StreamDeleted' -> {complete, {error, stream_deleted}};
@@ -397,7 +398,7 @@ deserialize_streameventscompleted(Data) ->
     Dto = erlesque_clientapi_pb:decode_readstreameventscompleted(Data),
     case Dto#readstreameventscompleted.result of
         'Success' ->       {complete, {ok, {
-            resolved_events(Dto#readstreameventscompleted.events),
+            erlesque_utils:resolved_events(Dto#readstreameventscompleted.events),
             Dto#readstreameventscompleted.next_event_number,
             Dto#readstreameventscompleted.is_end_of_stream
         }}};
@@ -411,15 +412,9 @@ deserialize_alleventscompleted(Data) ->
     Dto = erlesque_clientapi_pb:decode_readalleventscompleted(Data),
     case Dto#readalleventscompleted.result of
         'Success' ->       {complete, {ok, {
-            resolved_events(Dto#readalleventscompleted.events),
+            erlesque_utils:resolved_events(Dto#readalleventscompleted.events),
             {tfpos, Dto#readalleventscompleted.next_commit_position, Dto#readalleventscompleted.next_prepare_position}
         }}};
         'Error' ->         {complete, {error, Dto#readalleventscompleted.error}};
         'AccessDenied' ->  {complete, {error, access_denied}}
     end.
-
-resolved_events(Events) ->
-    lists:map(fun(E) -> resolved_event(E) end, Events).
-
-resolved_event(_EventDto) ->
-    not_implemented.

@@ -57,7 +57,8 @@
 -record(writeeventscompleted, {
     result = erlang:error({required, result}),
     message,
-    first_event_number = erlang:error({required, first_event_number})
+    first_event_number = erlang:error({required, first_event_number}),
+    last_event_number = erlang:error({required, last_event_number})
 }).
 -endif.
 
@@ -127,7 +128,9 @@
 -record(transactioncommitcompleted, {
     transaction_id = erlang:error({required, transaction_id}),
     result = erlang:error({required, result}),
-    message
+    message,
+    first_event_number = erlang:error({required, first_event_number}),
+    last_event_number = erlang:error({required, last_event_number})
 }).
 -endif.
 

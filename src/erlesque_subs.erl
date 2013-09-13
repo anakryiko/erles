@@ -261,7 +261,7 @@ retry(Reason, State) ->
     case Retries >= 0 of
         true ->
             cancel_timer(State#state.timer_ref),
-            NewCorrId = erlesque_utils:create_uuid_v4(),
+            NewCorrId = erlesque_utils:gen_uuid(),
             erlesque_fsm:operation_restarted(State#state.esq_pid, State#state.corr_id, NewCorrId),
             TimerRef = erlang:start_timer(State#state.retry_delay, self(), retry),
             {next_state, retry_pending, State#state{corr_id=NewCorrId, retries=Retries, timer_ref=TimerRef}};

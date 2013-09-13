@@ -260,7 +260,7 @@ start_waiting_operations(State=#state{})
     end.
 
 start_operation(Op=#wait_op{}, State=#state{}) ->
-    CorrId = erlesque_utils:create_uuid_v4(),
+    CorrId = erlesque_utils:gen_uuid(),
     SysParams = #sys_params{corr_id=CorrId,
                             esq_pid=self(),
                             conn_pid=State#state.conn_pid,

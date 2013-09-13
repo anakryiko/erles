@@ -130,7 +130,8 @@
 	 require_master}).
 
 -record(transactioncommitcompleted,
-	{transaction_id, result, message}).
+	{transaction_id, result, message, first_event_number,
+	 last_event_number}).
 
 -record(transactioncommit,
 	{transaction_id, require_master}).
@@ -153,7 +154,8 @@
 	{event_stream_id, expected_version, require_master}).
 
 -record(writeeventscompleted,
-	{result, message, first_event_number}).
+	{result, message, first_event_number,
+	 last_event_number}).
 
 -record(writeevents,
 	{event_stream_id, expected_version, events,
@@ -638,6 +640,10 @@ iolist(writeeventscompleted, Record) ->
      pack(3, required,
 	  with_default(Record#writeeventscompleted.first_event_number,
 		       none),
+	  int32, []),
+     pack(4, required,
+	  with_default(Record#writeeventscompleted.last_event_number,
+		       none),
 	  int32, [])];
 iolist(deletestream, Record) ->
     [pack(1, required,
@@ -730,7 +736,15 @@ iolist(transactioncommitcompleted, Record) ->
      pack(3, optional,
 	  with_default(Record#transactioncommitcompleted.message,
 		       none),
-	  string, [])];
+	  string, []),
+     pack(4, required,
+	  with_default(Record#transactioncommitcompleted.first_event_number,
+		       none),
+	  int32, []),
+     pack(5, required,
+	  with_default(Record#transactioncommitcompleted.last_event_number,
+		       none),
+	  int32, [])];
 iolist(readevent, Record) ->
     [pack(1, required,
 	  with_default(Record#readevent.event_stream_id, none),
@@ -1367,7 +1381,8 @@ decode(writeevents, Bytes) when is_binary(Bytes) ->
     to_record(writeevents, Decoded);
 decode(writeeventscompleted, Bytes)
     when is_binary(Bytes) ->
-    Types = [{3, first_event_number, int32, []},
+    Types = [{4, last_event_number, int32, []},
+	     {3, first_event_number, int32, []},
 	     {2, message, string, []},
 	     {1, result, operationresult, []}],
     Defaults = [],
@@ -1426,7 +1441,9 @@ decode(transactioncommit, Bytes)
     to_record(transactioncommit, Decoded);
 decode(transactioncommitcompleted, Bytes)
     when is_binary(Bytes) ->
-    Types = [{3, message, string, []},
+    Types = [{5, last_event_number, int32, []},
+	     {4, first_event_number, int32, []},
+	     {3, message, string, []},
 	     {2, result, operationresult, []},
 	     {1, transaction_id, int64, []}],
     Defaults = [],
