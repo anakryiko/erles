@@ -142,8 +142,27 @@ reads(C) ->
      ?_assertEqual({ok, {[RE3], 1, false}},           erlesque:read_stream_backward(C, S, 3, 2)),
      ?_assertEqual({ok, {[RE3, RE2, RE1], -1, true}}, erlesque:read_stream_backward(C, S, 5, 100)),
      ?_assertEqual({ok, {[RE3, RE2], 0, false}},      erlesque:read_stream_backward(C, S, last, 2)),
-     ?_assertEqual({ok, {[RE3, RE2], 0, false}},      erlesque:read_stream_backward(C, S, -1, 2))
+     ?_assertEqual({ok, {[RE3, RE2], 0, false}},      erlesque:read_stream_backward(C, S, -1, 2)),
+
+     ?_assertEqual([RE1, RE2, RE3], read_all_forward_and_filter(C, S))
     ].
+
+read_all_forward_and_filter(C, S) ->
+    Res = read_all_forward_and_filter(C, S, {tfpos, 0, 0}, []),
+    lists:reverse(Res).
+
+read_all_forward_and_filter(C, S, Pos, Acc) ->
+    {ok, {Events, NextPos, EndOfStream}} = erlesque:read_all_forward(C, Pos, 100),
+    NewAcc = lists:foldl(fun(E, A) ->
+        case E#event.stream_id =:= S of
+            true -> [E | A];
+            false -> A
+        end
+    end, Acc, Events),
+    case EndOfStream of
+        true -> read_all_forward_and_filter(C, S, NextPos, NewAcc);
+        false -> Acc
+    end.
 
 create_event() ->
     #event_data{event_type = <<"test-type">>, data = <<"some data">>, metadata = <<"some meta">>}.
