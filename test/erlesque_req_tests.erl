@@ -21,9 +21,9 @@ reqs_test_() ->
              transaction_any(D),
              transaction_empty(D),
 
-             reads(D)
-            ]
-            %}
+             reads(D),
+             subscriptions(D)
+            ]%}
      end}.
 
 setup() ->
@@ -97,27 +97,12 @@ reads(C) ->
     E1 = create_event(),
     E2 = create_event(),
     E3 = create_event(),
-    RE1 = #event{stream_id    = S,
-                 event_number = 0,
-                 event_id     = E1#event_data.event_id,
-                 event_type   = E1#event_data.event_type,
-                 data         = E1#event_data.data,
-                 metadata     = E1#event_data.metadata},
-    RE2 = #event{stream_id    = S,
-                 event_number = 1,
-                 event_id     = E2#event_data.event_id,
-                 event_type   = E2#event_data.event_type,
-                 data         = E2#event_data.data,
-                 metadata     = E2#event_data.metadata},
-    RE3 = #event{stream_id    = S,
-                 event_number = 2,
-                 event_id     = E3#event_data.event_id,
-                 event_type   = E3#event_data.event_type,
-                 data         = E3#event_data.data,
-                 metadata     = E3#event_data.metadata},
-    io:format("~p~n", [RE3]),
+    RE1 = map_event(S, 0, E1),
+    RE2 = map_event(S, 1, E2),
+    RE3 = map_event(S, 2, E3),
     {ok, 2} = erlesque:append(C, S, -1, [E1, E2, E3]),
-    [?_assertEqual({ok, RE1}, erlesque:read_event(C, S, 0)),
+    {inparallel, [
+     ?_assertEqual({ok, RE1}, erlesque:read_event(C, S, 0)),
      ?_assertEqual({ok, RE2}, erlesque:read_event(C, S, 1)),
      ?_assertEqual({ok, RE3}, erlesque:read_event(C, S, 2)),
      ?_assertEqual({ok, RE3}, erlesque:read_event(C, S, last)),
@@ -144,15 +129,16 @@ reads(C) ->
      ?_assertEqual({ok, {[RE3, RE2], 0, false}},      erlesque:read_stream_backward(C, S, last, 2)),
      ?_assertEqual({ok, {[RE3, RE2], 0, false}},      erlesque:read_stream_backward(C, S, -1, 2)),
 
-     ?_assertEqual([RE1, RE2, RE3], read_all_forward_and_filter(C, S))
-    ].
+     {timeout, 100, ?_assertEqual([RE1, RE2, RE3], read_all_forward_and_filter(C, S))},
+     {timeout, 100, ?_assertEqual([RE3, RE2, RE1], read_all_backward_and_filter(C, S))}
+    ]}.
 
 read_all_forward_and_filter(C, S) ->
     Res = read_all_forward_and_filter(C, S, {tfpos, 0, 0}, []),
     lists:reverse(Res).
 
 read_all_forward_and_filter(C, S, Pos, Acc) ->
-    {ok, {Events, NextPos, EndOfStream}} = erlesque:read_all_forward(C, Pos, 100),
+    {ok, {Events, NextPos, EndOfStream}} = erlesque:read_all_forward(C, Pos, 100, [{auth, {<<"admin">>, <<"changeit">>}}]),
     NewAcc = lists:foldl(fun(E, A) ->
         case E#event.stream_id =:= S of
             true -> [E | A];
@@ -160,12 +146,87 @@ read_all_forward_and_filter(C, S, Pos, Acc) ->
         end
     end, Acc, Events),
     case EndOfStream of
-        true -> read_all_forward_and_filter(C, S, NextPos, NewAcc);
-        false -> Acc
+        false -> read_all_forward_and_filter(C, S, NextPos, NewAcc);
+        true -> NewAcc
+    end.
+
+read_all_backward_and_filter(C, S) ->
+    Res = read_all_backward_and_filter(C, S, last, []),
+    lists:reverse(Res).
+
+read_all_backward_and_filter(C, S, Pos, Acc) ->
+    {ok, {Events, NextPos, EndOfStream}} = erlesque:read_all_backward(C, Pos, 100, [{auth, {<<"admin">>, <<"changeit">>}}]),
+    NewAcc = lists:foldl(fun(E, A) ->
+        case E#event.stream_id =:= S of
+            true -> [E | A];
+            false -> A
+        end
+    end, Acc, Events),
+    case EndOfStream of
+        false -> read_all_backward_and_filter(C, S, NextPos, NewAcc);
+        true -> NewAcc
+    end.
+
+subscriptions(C) ->
+    S1 = gen_stream_id(),
+    S2 = gen_stream_id(),
+    E1 = create_event(),
+    E2 = create_event(),
+    E3 = create_event(),
+    E4 = create_event(),
+    E5 = create_event(),
+    RE1 = map_event(S1, 0, E1),
+    RE2 = map_event(S1, 1, E2),
+    RE3 = map_event(S1, 2, E3),
+    RE4 = map_event(S2, 0, E4),
+    RE5 = map_event(S2, 1, E5),
+    Subscr1 = create_subscriber(C, S1, 3),
+    Subscr2 = create_subscriber(C, S2, 2),
+    {ok, 0} = erlesque:append(C, S1, -1, [E1]),
+    {ok, 0} = erlesque:append(C, S2, -1, [E4]),
+    {ok, 1} = erlesque:append(C, S1, 0, [E2]),
+    {ok, 1} = erlesque:append(C, S2, 0, [E5]),
+    {ok, 2} = erlesque:append(C, S1, 1, [E3]),
+    SubRes1 = receive
+                  {subscriber_done, Subscr1, Res1} -> Res1
+                  %Other1 -> {unexpected_msg, Other1}
+                  after 5000 -> subscriber1_timeout
+              end,
+    SubRes2 = receive
+                  {subscriber_done, Subscr2, Res2} -> Res2
+                  %Other2 -> {unexpected_msg, Other2}
+                  after 5000 -> subscriber2_timeout
+              end,
+    {inparallel, [
+     ?_assertEqual([RE1, RE2, RE3], SubRes1),
+     ?_assertEqual([RE4, RE5], SubRes2)
+    ]}.
+
+create_subscriber(C, StreamId, EventCount) ->
+    SelfPid = self(),
+    SubPid = spawn_link(fun() -> subscriber(EventCount, SelfPid, []) end),
+    {ok, {_LastCommitPos, _LastEventNumber}} = erlesque:subscribe_to(C, StreamId, [{subscriber, SubPid}]),
+    SubPid.
+
+subscriber(0, RespPid, Acc) ->
+    Res = lists:reverse(Acc),
+    RespPid ! {subscriber_done, self(), Res};
+subscriber(EventsToGo, RespPid, Acc) ->
+    receive
+        {event, E} -> subscriber(EventsToGo-1, RespPid, [E | Acc]);
+        Unexpected -> erlang:display({unexpected_msg, Unexpected})
     end.
 
 create_event() ->
     #event_data{event_type = <<"test-type">>, data = <<"some data">>, metadata = <<"some meta">>}.
+
+map_event(StreamId, EventNumber, EventData) ->
+    #event{stream_id    = StreamId,
+           event_number = EventNumber,
+           event_id     = EventData#event_data.event_id,
+           event_type   = EventData#event_data.event_type,
+           data         = EventData#event_data.data,
+           metadata     = EventData#event_data.metadata}.
 
 gen_stream_id() ->
     UuidStr = erlesque_utils:uuid_to_string(erlesque_utils:gen_uuid()),

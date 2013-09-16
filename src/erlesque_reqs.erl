@@ -413,7 +413,8 @@ deserialize_alleventscompleted(Data) ->
     case Dto#readalleventscompleted.result of
         'Success' ->       {complete, {ok, {
             erlesque_utils:resolved_events(Dto#readalleventscompleted.events),
-            {tfpos, Dto#readalleventscompleted.next_commit_position, Dto#readalleventscompleted.next_prepare_position}
+            {tfpos, Dto#readalleventscompleted.next_commit_position, Dto#readalleventscompleted.next_prepare_position},
+            Dto#readalleventscompleted.events =:= []
         }}};
         'Error' ->         {complete, {error, Dto#readalleventscompleted.error}};
         'AccessDenied' ->  {complete, {error, access_denied}}

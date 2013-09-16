@@ -21,14 +21,6 @@
 -define(RETRY_DELAY, 500).
 -define(DEFAULT_AUTH, noauth).
 
-%%% -record(connection_settings, {verboseLogging = false,
-%%%                               failNoResponse = false,
-%%%                               errorOccurred,
-%%%                               closed,
-%%%                               connected,
-%%%                               disconnected,
-%%%                               reconnecting}).
-
 -record(state, {conn_pid,
                 sup_pid,
                 waiting_ops = queue:new(),
@@ -40,7 +32,7 @@
                 default_auth}).
 
 -record(act_op, {type, pid}).
--record(wait_op, {type, from, op, params}).
+-record(wait_op, {type, from, op, auth, params}).
 
 start_link(Destination = {node, _Ip, _Port}) ->
     gen_fsm:start_link(?MODULE, {Destination, []}, []).
@@ -117,8 +109,8 @@ init({Destination, Options}) ->
                             retry_delay=RetryDelay,
                             default_auth=DefaultAuth}}.
 
-connecting({op, Type, Operation, Params}, From, State=#state{waiting_ops=WaitingOps}) ->
-    WaitOp = #wait_op{type=Type, from=From, op=Operation, params=Params},
+connecting({op, {Operation, Type, Auth}, Params}, From, State=#state{waiting_ops=WaitingOps}) ->
+    WaitOp = #wait_op{type=Type, from=From, op=Operation, auth=Auth, params=Params},
     NewWaitingOps = queue:in(WaitOp, WaitingOps),
     {next_state, connecting, State#state{waiting_ops=NewWaitingOps}};
 
@@ -131,8 +123,8 @@ connecting(Msg, State) ->
     {next_state, connecting, State}.
 
 
-connected({op, Type, Operation, Params}, From, State) ->
-    WaitOp = #wait_op{type=Type, from=From, op=Operation, params=Params},
+connected({op, {Operation, Type, Auth}, Params}, From, State) ->
+    WaitOp = #wait_op{type=Type, from=From, op=Operation, auth=Auth, params=Params},
     NewState = case State#state.max_server_ops =:= 0 of
         true ->
             State#state{waiting_ops=queue:in(WaitOp, State#state.waiting_ops)};
@@ -261,6 +253,10 @@ start_waiting_operations(State=#state{})
 
 start_operation(Op=#wait_op{}, State=#state{}) ->
     CorrId = erlesque_utils:gen_uuid(),
+    Auth = case Op#wait_op.auth of
+        defauth -> State#state.default_auth;
+        Other -> Other
+    end,
     SysParams = #sys_params{corr_id=CorrId,
                             esq_pid=self(),
                             conn_pid=State#state.conn_pid,
@@ -268,7 +264,7 @@ start_operation(Op=#wait_op{}, State=#state{}) ->
                             op_timeout=State#state.op_timeout,
                             op_retries=State#state.op_retries,
                             retry_delay=State#state.retry_delay,
-                            auth=State#state.default_auth},
+                            auth=Auth},
     {ok, Pid} = erlesque_ops_sup:start_operation(State#state.sup_pid,
                                                  Op#wait_op.op,
                                                  SysParams,

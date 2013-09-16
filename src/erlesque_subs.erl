@@ -36,10 +36,7 @@ init({subscribe_to_stream, S=#sys_params{}, {StreamId, ResolveLinks, SubPid}}) -
                    retry_delay = S#sys_params.retry_delay,
                    auth = S#sys_params.auth,
                    timer_ref = none,
-                   stream_id = case StreamId of
-                       all -> <<"">>;
-                       _ -> StreamId
-                   end,
+                   stream_id = StreamId,
                    resolve_links = ResolveLinks,
                    sub_pid = SubPid,
                    sub_mon_ref = MonRef},
@@ -230,7 +227,7 @@ complete(State=#state{}) ->
 
 succeed(State=#state{}) ->
     cancel_timer(State#state.timer_ref),
-    State#state{sub_mon_ref=none}.
+    State#state{timer_ref=none}.
 
 abort(State=#state{}, Result) ->
     cancel_timer(State#state.timer_ref),
