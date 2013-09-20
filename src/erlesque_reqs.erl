@@ -167,10 +167,10 @@ not_handled(Data, State) ->
         'NotMaster' ->
             MasterInfo = erlesque_clientapi_pb:decode_nothandled_masterinfo(Dto#nothandled.additional_info),
             IpStr = MasterInfo#nothandled_masterinfo.external_tcp_address,
-            Ip = IpStr,%ipstr_to_ip(IpStr),
+            Ip = ipstr_to_ip(IpStr),
             Port = MasterInfo#nothandled_masterinfo.external_tcp_port,
-            erlesque_fsm:reconnect(State#state.esq_pid, Ip, Port),
             cancel_timer(State#state.timer_ref),
+            erlesque_fsm:reconnect(State#state.esq_pid, Ip, Port),
             {next_state, disconnected, State#state{timer_ref=none}};
         Reason ->
             retry(Reason, State)
@@ -198,6 +198,10 @@ bool_to_int(Bool) when is_boolean(Bool) ->
         true -> 1;
         false -> 0
     end.
+
+ipstr_to_ip(String) ->
+    {ok, [I1, I2, I3, I4], _} = io_lib:fread("~d.~d.~d.~d", String),
+    {I1, I2, I3, I4}.
 
 response_cmd(write_events) ->                write_events_completed;
 response_cmd(transaction_start) ->           transaction_start_completed;

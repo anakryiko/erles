@@ -2,13 +2,20 @@
 
 -export([connect/1, connect/2, close/1, start_link/1, start_link/2]).
 -export([ping/1]).
--export([append/4, transaction_start/3, transaction_write/3, transaction_commit/2, delete/3]).
--export([read_event/3, read_event/4,
-         read_stream_forward/4, read_stream_forward/5,
-         read_stream_backward/4, read_stream_backward/5,
-         read_all_forward/3, read_all_forward/4,
-         read_all_backward/3, read_all_backward/4]).
--export([subscribe_to/2, subscribe_to/3]).
+
+-export([append/4, append/5]).
+-export([transaction_start/3, transaction_start/4]).
+-export([transaction_write/3, transaction_write/4]).
+-export([transaction_commit/2, transaction_commit/3]).
+-export([delete/3, delete/4]).
+
+-export([read_event/3, read_event/4]).
+-export([read_stream_forward/4, read_stream_forward/5]).
+-export([read_stream_backward/4, read_stream_backward/5]).
+-export([read_all_forward/3, read_all_forward/4]).
+-export([read_all_backward/3, read_all_backward/4]).
+
+-export([subscribe/2, subscribe/3]).
 
 -define(EXPECTED_VERSION_ANY, -2).
 -define(REQUIRE_MASTER, true).
@@ -244,16 +251,16 @@ read_all_backward(Pid, FromPos={tfpos, CommitPos, PreparePos}, MaxCount, Auth, R
 
 
 %%% PRIMITIVE SUBSCRIPTION TO STREAM
-subscribe_to(Pid, StreamId) ->
-    subscribe_to(Pid, StreamId, []).
+subscribe(Pid, StreamId) ->
+    subscribe(Pid, StreamId, []).
 
-subscribe_to(Pid, StreamId, Options) ->
+subscribe(Pid, StreamId, Options) ->
     Auth = proplists:get_value(auth, Options, defauth),
     ResolveLinks = proplists:get_value(resolve, Options, false),
     SubscriberPid = proplists:get_value(subscriber, Options, self()),
-    subscribe_to(Pid, StreamId, Auth, ResolveLinks, SubscriberPid).
+    subscribe(Pid, StreamId, Auth, ResolveLinks, SubscriberPid).
 
-subscribe_to(Pid, StreamId, Auth, ResolveLinks, SubscriberPid) ->
+subscribe(Pid, StreamId, Auth, ResolveLinks, SubscriberPid) ->
     Stream = case StreamId of
         all -> <<"">>;
         _ -> StreamId

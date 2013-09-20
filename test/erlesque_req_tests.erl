@@ -189,12 +189,10 @@ subscriptions(C) ->
     {ok, 2} = erlesque:append(C, S1, 1, [E3]),
     SubRes1 = receive
                   {subscriber_done, Subscr1, Res1} -> Res1
-                  %Other1 -> {unexpected_msg, Other1}
                   after 5000 -> subscriber1_timeout
               end,
     SubRes2 = receive
                   {subscriber_done, Subscr2, Res2} -> Res2
-                  %Other2 -> {unexpected_msg, Other2}
                   after 5000 -> subscriber2_timeout
               end,
     {inparallel, [
@@ -205,7 +203,7 @@ subscriptions(C) ->
 create_subscriber(C, StreamId, EventCount) ->
     SelfPid = self(),
     SubPid = spawn_link(fun() -> subscriber(EventCount, SelfPid, []) end),
-    {ok, {_LastCommitPos, _LastEventNumber}} = erlesque:subscribe_to(C, StreamId, [{subscriber, SubPid}]),
+    {ok, {_LastCommitPos, _LastEventNumber}} = erlesque:subscribe(C, StreamId, [{subscriber, SubPid}]),
     SubPid.
 
 subscriber(0, RespPid, Acc) ->

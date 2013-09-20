@@ -21,7 +21,7 @@ from_binary(Binary) ->
                           PassLen:8, Pass:PassLen/binary,
                           Data/binary>> ->
                             {pkg, decode_cmd(Cmd), CorrId, {Login, Pass}, Data};
-                        true ->
+                        _ ->
                             {error, invalid_auth}
                     end
             end;

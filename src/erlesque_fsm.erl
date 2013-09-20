@@ -201,9 +201,6 @@ handle_info({disconnected, {_Ip, _Port}, _Reason}, connected, State=#state{activ
     dict:fold(Pause, ok, Ops),
     {next_state, connecting, State};
 
-handle_info({reconnecting, {_Ip, _Port}}, connecting, State) ->
-    {next_state, connecting, State};
-
 handle_info({closed, Reason}, _StateName, State=#state{active_ops=ActiveOps, waiting_ops=WaitingOps}) ->
     io:format("Connection stopped. Reason: ~p.~n", [Reason]),
     {NewActiveOps, NewWaitingOps} = abort_operations(ActiveOps, WaitingOps, Reason),
@@ -221,11 +218,6 @@ terminate(normal, _StateName, _State) ->
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
-
-handle_pkg(State=#state{conn_pid=ConnPid}, {pkg, heartbeat_req, CorrId, _Auth, Data}) ->
-    Pkg = erlesque_pkg:create(heartbeat_resp, CorrId, Data),
-    erlesque_conn:send(ConnPid, Pkg),
-    State;
 
 handle_pkg(State=#state{active_ops=Ops}, Pkg={pkg, _Cmd, CorrId, _Auth, _Data}) ->
     io:format("Package arrived: ~p~n", [Pkg]),

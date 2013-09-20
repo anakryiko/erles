@@ -1,14 +1,11 @@
 -module(erlesque_ops_sup).
 -behavior(supervisor).
 
--export([start_link/0, stop/1, start_operation/4]).
+-export([start_link/0, start_operation/4]).
 -export([init/1]).
 
 start_link() ->
     supervisor:start_link(?MODULE, nothing).
-
-stop(SupPid) ->
-    supervisor:stop(SupPid).
 
 start_operation(SupPid, ReqCmd, SysParams, OpParams) ->
     supervisor:start_child(SupPid, [ReqCmd, SysParams, OpParams]).
