@@ -48,6 +48,9 @@ handle_sync_event(Event, From, StateName, State) ->
 disconnected(connected, State) ->
     issue_request(State);
 
+disconnected(disconnected, State) ->
+    {next_state, disconnected, State};
+
 disconnected({aborted, Reason}, State) ->
     abort(State, {error, {aborted, Reason}});
 
@@ -141,6 +144,7 @@ terminate(normal, _StateName, _State) ->
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
+
 issue_request(State) ->
     send_request(State),
     TimerRef = erlang:start_timer(State#state.timeout, self(), timeout),
@@ -167,11 +171,15 @@ not_handled(Data, State) ->
         'NotMaster' ->
             MasterInfo = erlesque_clientapi_pb:decode_nothandled_masterinfo(Dto#nothandled.additional_info),
             IpStr = MasterInfo#nothandled_masterinfo.external_tcp_address,
-            Ip = ipstr_to_ip(IpStr),
+            Ip = erlesque_utils:ipstr_to_ip(IpStr),
             Port = MasterInfo#nothandled_masterinfo.external_tcp_port,
             cancel_timer(State#state.timer_ref),
-            erlesque_fsm:reconnect(State#state.esq_pid, Ip, Port),
-            {next_state, disconnected, State#state{timer_ref=none}};
+            case erlesque_conn:reconnect(State#state.conn_pid, Ip, Port) of
+                already_connected ->
+                    issue_request(State);
+                ok ->
+                    {next_state, disconnected, State#state{timer_ref=none}}
+            end;
         Reason ->
             retry(Reason, State)
     end.
@@ -198,10 +206,6 @@ bool_to_int(Bool) when is_boolean(Bool) ->
         true -> 1;
         false -> 0
     end.
-
-ipstr_to_ip(String) ->
-    {ok, [I1, I2, I3, I4], _} = io_lib:fread("~d.~d.~d.~d", String),
-    {I1, I2, I3, I4}.
 
 response_cmd(write_events) ->                write_events_completed;
 response_cmd(transaction_start) ->           transaction_start_completed;
@@ -330,7 +334,6 @@ create_package(CorrId, Auth, read_all_events_backward, {{tfpos, CommitPos, Prepa
 
 deserialize_result(write_events, write_events_completed, Data) ->
     Dto = erlesque_clientapi_pb:decode_writeeventscompleted(Data),
-    io:format("~p~n", [Dto]),
     case Dto#writeeventscompleted.result of
         'Success' -> {complete, {ok, Dto#writeeventscompleted.last_event_number}};
         Other -> decode_write_failure(Other)

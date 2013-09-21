@@ -1,9 +1,12 @@
--record(conn_settings, {destination,
-                        conn_timeout,
+-record(conn_settings, {conn_timeout,
                         reconn_delay,
-                        max_reconns,
+                        max_conn_retries,
                         heartbeat_period,
-                        heartbeat_timeout}).
+                        heartbeat_timeout,
+                        dns_timeout,
+                        gossip_timeout,
+                        discover_delay,
+                        max_discover_retries}).
 
 -record(sys_params, {corr_id,
                      esq_pid,

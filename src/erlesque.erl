@@ -1,6 +1,6 @@
 -module(erlesque).
-
--export([connect/1, connect/2, close/1, start_link/1, start_link/2]).
+-export([test/1, test_par/3, test_seq/3]).
+-export([connect/2, connect/3, close/1]).
 -export([ping/1]).
 
 -export([append/4, append/5]).
@@ -22,18 +22,41 @@
 -define(LAST_EVENT_NUMBER, -1).
 -define(LAST_LOG_POSITION, -1).
 
-connect(Destination) -> start_link(Destination).
+%%% CONNECT
+connect(node, {Ip={_I1, _I2, _I3, _I4}, Port})
+        when is_integer(Port), Port > 0, Port < 65536 ->
+    erlesque_fsm:start_link({node, Ip, Port});
 
-connect(Destination, Options) -> start_link(Destination, Options).
+connect(dns, {ClusterDns, ManagerPort})
+        when is_list(ClusterDns),
+             is_integer(ManagerPort), ManagerPort > 0, ManagerPort < 65536 ->
+    erlesque_fsm:start_link({dns, ClusterDns, ManagerPort});
 
+connect(cluster, SeedNodes)
+        when is_list(SeedNodes) ->
+    erlesque_fsm:start_link({cluster, SeedNodes}).
+
+
+connect(node, {Ip={_I1, _I2, _I3, _I4}, Port}, Options)
+        when is_integer(Port), Port > 0, Port < 65536,
+             is_list(Options) ->
+    erlesque_fsm:start_link({node, Ip, Port}, Options);
+
+connect(dns, {ClusterDns, ManagerPort}, Options)
+        when is_list(ClusterDns),
+             is_integer(ManagerPort), ManagerPort > 0, ManagerPort < 65536,
+             is_list(Options) ->
+    erlesque_fsm:start_link({dns, ClusterDns, ManagerPort}, Options);
+
+connect(cluster, SeedNodes, Options)
+        when is_list(SeedNodes),
+             is_list(Options) ->
+    erlesque_fsm:start_link({cluster, SeedNodes}, Options).
+
+%%% CLOSE
 close(Pid) ->
     gen_fsm:sync_send_all_state_event(Pid, close).
 
-start_link(Destination = {node, _Ip, _Port}) ->
-    erlesque_fsm:start_link(Destination).
-
-start_link(Destination = {node, _Ip, _Port}, Options) ->
-    erlesque_fsm:start_link(Destination, Options).
 
 %%% PING
 ping(Pid) ->
@@ -267,4 +290,29 @@ subscribe(Pid, StreamId, Auth, ResolveLinks, SubscriberPid) ->
     end,
     gen_fsm:sync_send_event(Pid, {op, {subscribe_to_stream, perm, Auth},
                                       {Stream, ResolveLinks, SubscriberPid}}, infinity).
+
+
+test(Cnt) ->
+    {ok, C} = erlesque:connect({node, {127,0,0,1}, 1113}),
+    {TimePar, _Value1} = timer:tc(fun() -> test_par(Cnt, Cnt, C) end),
+    {TimeSeq, _Value2} = timer:tc(fun() -> test_seq(Cnt, Cnt, C) end),
+    {TimePar, TimeSeq}.
+
+test_par(0, 0, _C) -> ok;
+test_par(0, Cnt2, C) -> receive done -> test_par(0, Cnt2-1, C) end;
+test_par(Cnt1, Cnt2, C) ->
+    Self = self(),
+    spawn_link(fun() ->
+        {ok, _} = erlesque:append(C, <<"test-event">>, any, [erlesque_req_tests:create_event()]),
+        Self ! done
+    end),
+    test_par(Cnt1-1, Cnt2, C).
+
+test_seq(0, 0, _C) -> ok;
+test_seq(0, Cnt2, C) -> receive done -> test_seq(0, Cnt2-1, C) end;
+test_seq(Cnt1, Cnt2, C) ->
+    {ok, _} = erlesque:append(C, <<"test-event">>, any, [erlesque_req_tests:create_event()]),
+    self() ! done,
+    test_seq(Cnt1-1, Cnt2, C).
+
 

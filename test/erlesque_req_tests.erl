@@ -28,7 +28,7 @@ reqs_test_() ->
 
 setup() ->
     %% here we assume that node on default IP and port is already started
-    {ok, C} = erlesque:connect({node, {127,0,0,1}, 1113}),
+    {ok, C} = erlesque:connect(node, {{127,0,0,1}, 1113}),
     C.
 
 teardown(C) ->

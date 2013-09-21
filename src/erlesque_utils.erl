@@ -1,5 +1,7 @@
 -module(erlesque_utils).
 -export([gen_uuid/0, uuid_to_string/1, uuid_to_string/2]).
+-export([ipstr_to_ip/1]).
+-export([shuffle/1]).
 -export([resolved_event/1, resolved_events/1]).
 
 -include("erlesque_clientapi_pb.hrl").
@@ -79,6 +81,16 @@ uuid_to_string(Value, nodash) ->
                                 [B1, B2, B3, B4, B5])).
 
 
+ipstr_to_ip(Binary) when is_binary(Binary) ->
+    ipstr_to_ip(binary_to_list(Binary));
+
+ipstr_to_ip(String) ->
+    {ok, [I1, I2, I3, I4], _} = io_lib:fread("~d.~d.~d.~d", String),
+    {I1, I2, I3, I4}.
+
+
+shuffle(L) when is_list(L) ->
+  [X || {_, X} <- lists:sort([{random:uniform(), Y} || Y <- L])].
 
 resolved_events(Events) ->
     lists:map(fun(E) -> resolved_event(E) end, Events).

@@ -243,11 +243,15 @@ not_handled(Data, State) ->
         'NotMaster' ->
             MasterInfo = erlesque_clientapi_pb:decode_nothandled_masterinfo(Dto#nothandled.additional_info),
             IpStr = MasterInfo#nothandled_masterinfo.external_tcp_address,
+            Ip = erlesque_utils:ipstr_to_ip(IpStr),
             Port = MasterInfo#nothandled_masterinfo.external_tcp_port,
-            Ip = IpStr,%ipstr_to_ip(IpStr),
-            erlesque_fsm:reconnect(State#state.esq_pid, Ip, Port),
             cancel_timer(State#state.timer_ref),
-            {next_state, disconnected, State#state{timer_ref=none}};
+            case erlesque_conn:reconnect(State#state.conn_pid, Ip, Port) of
+                already_connected ->
+                    issue_request(State);
+                ok ->
+                    {next_state, disconnected, State#state{timer_ref=none}}
+            end;
         OtherReason ->
             retry(OtherReason, State)
     end.
