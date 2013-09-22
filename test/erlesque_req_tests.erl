@@ -9,21 +9,36 @@ reqs_test_() ->
      fun setup/0,
      fun teardown/1,
      fun(D) ->
-        %{inparallel,
-            [append_any(D),
-             append_expver(D),
-             append_empty(D),
+        [append_any(D),
+         append_expver(D),
+         append_empty(D),
 
-             delete_expver(D),
-             delete_any(D),
+         delete_expver(D),
+         delete_any(D),
 
-             transaction_expver(D),
-             transaction_any(D),
-             transaction_empty(D),
+         transaction_expver(D),
+         transaction_any(D),
+         transaction_empty(D),
 
-             reads(D),
-             subscriptions(D)
-            ]%}
+         reads(D),
+         subscriptions(D),
+
+         metadata_raw_get_set_works(D),
+         metadata_raw_get_unexisting(D),
+         metadata_raw_setting_empty_works(D),
+         metadata_raw_setting_with_wrong_expver_fails(D),
+         metadata_raw_setting_for_deleted_stream_fails(D),
+         metadata_raw_getting_for_deleted_stream_fails(D),
+         metadata_raw_returns_last_meta(D),
+
+         metadata_struct_set_get_empty_works(D),
+         metadata_struct_get_unexisting_returns_empty(D),
+         metadata_struct_get_nonjson_fails(D),
+         metadata_struct_get_incomplete_json_fails(D),
+         metadata_struct_set_raw_read_structured(D),
+         metadata_struct_set_structured_read_structured(D),
+         metadata_struct_set_structured_read_raw(D)
+        ]
      end}.
 
 setup() ->
@@ -57,7 +72,7 @@ append_empty(C) ->
 
 delete_any(C) ->
     Stream = gen_stream_id(),
-    {ok, _NextExpVer} = erlesque:append(C, Stream, any, [create_event(), create_event()]),
+    {ok, _} = erlesque:append(C, Stream, any, [create_event(), create_event()]),
     [?_assertEqual(ok, erlesque:delete(C, Stream, any)),
      ?_assertEqual({error, stream_deleted}, erlesque:read_event(C, Stream, last))
     ].
@@ -215,8 +230,175 @@ subscriber(EventsToGo, RespPid, Acc) ->
         Unexpected -> erlang:display({unexpected_msg, Unexpected})
     end.
 
+metadata_raw_get_set_works(C) ->
+    S = gen_stream_id(),
+    Bin = erlesque_utils:gen_uuid(),
+    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, Bin)),
+     ?_assertEqual({ok, Bin, 0}, erlesque:get_metadata(C, S, raw)),
+     ?_assertMatch({ok, #event{data=Bin}}, erlesque:read_event(C, <<"$$", S/binary>>, last))
+    ].
+
+metadata_raw_get_unexisting(C) ->
+    S = gen_stream_id(),
+    ?_assertEqual({ok, <<>>, -1}, erlesque:get_metadata(C, S, raw)).
+
+metadata_raw_setting_empty_works(C) ->
+    S = gen_stream_id(),
+    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, <<>>)),
+     ?_assertEqual({ok, <<>>, 0}, erlesque:get_metadata(C, S, raw))
+    ].
+
+metadata_raw_setting_with_wrong_expver_fails(C) ->
+    S = gen_stream_id(),
+    [?_assertEqual({error, wrong_expected_version}, erlesque:set_metadata(C, S, 1, <<>>)),
+     ?_assertEqual({ok, <<>>, -1}, erlesque:get_metadata(C, S, raw))
+    ].
+
+metadata_raw_setting_for_deleted_stream_fails(C) ->
+    S = gen_stream_id(),
+    [?_assertEqual(ok, erlesque:delete(C, S, any)),
+     ?_assertEqual({error, stream_deleted}, erlesque:set_metadata(C, S, any, <<>>))
+    ].
+
+metadata_raw_getting_for_deleted_stream_fails(C) ->
+    S = gen_stream_id(),
+    [?_assertEqual(ok, erlesque:delete(C, S, any)),
+     ?_assertEqual({error, stream_deleted}, erlesque:get_metadata(C, S, raw))
+    ].
+
+metadata_raw_returns_last_meta(C) ->
+    S = gen_stream_id(),
+    Bin1 = erlesque_utils:gen_uuid(),
+    Bin2 = erlesque_utils:gen_uuid(),
+    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, Bin1)),
+     ?_assertEqual({ok, 1}, erlesque:set_metadata(C, S, 0, Bin2)),
+     ?_assertEqual({ok, Bin2, 1}, erlesque:get_metadata(C, S, raw))
+    ].
+
+
+metadata_struct_set_get_empty_works(C) ->
+    S = gen_stream_id(),
+    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, #stream_meta{})),
+     ?_assertEqual({ok, <<"{}">>, 0}, erlesque:get_metadata(C, S, raw)),
+     ?_assertEqual({ok, #stream_meta{}, 0}, erlesque:get_metadata(C, S, structured))
+    ].
+
+metadata_struct_get_unexisting_returns_empty(C) ->
+    S = gen_stream_id(),
+    ?_assertEqual({ok, #stream_meta{}, -1}, erlesque:get_metadata(C, S, structured)).
+
+metadata_struct_get_nonjson_fails(C) ->
+    S = gen_stream_id(),
+    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, <<"}abracadabra{">>)),
+     ?_assertEqual({error, bad_json}, erlesque:get_metadata(C, S, structured))
+    ].
+
+metadata_struct_get_incomplete_json_fails(C) ->
+    S = gen_stream_id(),
+    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, <<"{">>)),
+     ?_assertEqual({error, bad_json}, erlesque:get_metadata(C, S, structured))
+    ].
+
+metadata_struct_set_raw_read_structured(C) ->
+    S = gen_stream_id(),
+    MetaBin = struct_meta_as_binary(),
+    MetaStruct = struct_meta_expected(),
+    Opts = [{auth, {<<"admin">>, <<"changeit">>}}],
+    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, MetaBin, Opts)),
+     ?_assertEqual({ok, MetaStruct, 0}, erlesque:get_metadata(C, S, structured, Opts))
+    ].
+
+metadata_struct_set_structured_read_structured(C) ->
+    S = gen_stream_id(),
+    MetaStruct = struct_meta_expected(),
+    Opts = [{auth, {<<"admin">>, <<"changeit">>}}],
+    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, MetaStruct, Opts)),
+     ?_assertEqual({ok, MetaStruct, 0}, erlesque:get_metadata(C, S, structured, Opts))
+    ].
+
+metadata_struct_set_structured_read_raw(C) ->
+    S = gen_stream_id(),
+    MetaStruct = struct_meta_expected(),
+    MetaBin = struct_meta_canon_binary(),
+    Opts = [{auth, {<<"admin">>, <<"changeit">>}}],
+    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, MetaStruct, Opts)),
+     ?_assertEqual({ok, MetaBin, 0}, erlesque:get_metadata(C, S, raw, Opts))
+    ].
+
+struct_meta_as_binary() ->
+    <<"{"
+      "     \"$maxCount\": 17,"
+      "     \"$maxAge\": 123321,"
+      "     \"$tb\": 23,"
+      "     \"$cacheControl\": 7654321,"
+      "     \"$acl\": {"
+      "         \"$r\": \"r\","
+      "         \"$w\": [\"w1\", \"w2\"],"
+      "         \"$d\": \"d\","
+      "         \"$mr\": [\"mr1\", \"mr2\"],"
+      "         \"$mw\": \"mw\""
+      "     },"
+      "     \"customString\": \"some-string\","
+      "     \"customInt\": -179,"
+      "     \"customDouble\": 1.7,"
+      "     \"customLong\": 123123123123123123,"
+      "     \"customBool\": true,"
+      "     \"customNullable\": null,"
+      "     \"customRawJson\": {"
+      "         \"subProperty\": 999"
+      "     }"
+      "}">>.
+
+struct_meta_canon_binary() ->
+    B = <<"{"
+          "     \"$maxCount\": 17,"
+          "     \"$maxAge\": 123321,"
+          "     \"$tb\": 23,"
+          "     \"$cacheControl\": 7654321,"
+          "     \"$acl\": {"
+          "         \"$r\": [\"r\"],"
+          "         \"$w\": [\"w1\", \"w2\"],"
+          "         \"$d\": [\"d\"],"
+          "         \"$mr\": [\"mr1\", \"mr2\"],"
+          "         \"$mw\": [\"mw\"]"
+          "     },"
+          "     \"customString\": \"some-string\","
+          "     \"customInt\": -179,"
+          "     \"customDouble\": 1.7,"
+          "     \"customLong\": 123123123123123123,"
+          "     \"customBool\": true,"
+          "     \"customNullable\": null,"
+          "     \"customRawJson\": {"
+          "         \"subProperty\": 999"
+          "     }"
+          "}">>,
+    << <<X:8>> || <<X:8>> <= B, X =/= $\s, X =/= $\t, X =/= $\r, X =/= $\n >>.
+
+struct_meta_expected() ->
+    #stream_meta{max_count=17,
+                 max_age=123321,
+                 truncate_before=23,
+                 cache_control=7654321,
+                 acl=#stream_acl{read_roles=[<<"r">>],
+                                 write_roles=[<<"w1">>, <<"w2">>],
+                                 delete_roles=[<<"d">>],
+                                 metaread_roles=[<<"mr1">>, <<"mr2">>],
+                                 metawrite_roles=[<<"mw">>]},
+                 custom=[{<<"customString">>, <<"some-string">>},
+                         {<<"customInt">>, -179},
+                         {<<"customDouble">>, 1.7},
+                         {<<"customLong">>, 123123123123123123},
+                         {<<"customBool">>, true},
+                         {<<"customNullable">>, null},
+                         {<<"customRawJson">>, [{<<"subProperty">>, 999}]}
+                        ]
+                 }.
+
+
 create_event() ->
-    #event_data{event_type = <<"test-type">>, data = <<"some data">>, metadata = <<"some meta">>}.
+    #event_data{event_type = <<"test-type">>,
+                data = <<"some data">>,
+                metadata = <<"some meta">>}.
 
 map_event(StreamId, EventNumber, EventData) ->
     #event{stream_id    = StreamId,

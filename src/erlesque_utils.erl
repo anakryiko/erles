@@ -44,6 +44,8 @@
 %%% OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 %%% DAMAGE.
 
+-spec gen_uuid() -> uuid().
+
 gen_uuid() ->
     <<Rand1:48, _:4, Rand2:12, _:2, Rand3:62>> = crypto:rand_bytes(16),
     <<Rand1:48,
@@ -52,8 +54,8 @@ gen_uuid() ->
       1:1, 0:1,            % RFC 4122 variant bits
       Rand3:62>>.
 
--spec uuid_to_list(Value :: <<_:128>>) ->
-    iolist().
+
+-spec uuid_to_list(Value :: <<_:128>>) -> iolist().
 
 uuid_to_list(Value)
     when is_binary(Value), byte_size(Value) == 16 ->
@@ -64,11 +66,14 @@ uuid_to_list(Value)
       B5:48/unsigned-integer>> = Value,
     [B1, B2, B3, B4, B5].
 
--spec uuid_to_string(Value :: <<_:128>>) ->
-    string().
+
+-spec uuid_to_string(Value :: <<_:128>>) -> string().
 
 uuid_to_string(Value) ->
     uuid_to_string(Value, standard).
+
+
+-spec uuid_to_string(Value :: <<_:128>>, 'standard' | 'nodash') -> string().
 
 uuid_to_string(Value, standard) ->
     [B1, B2, B3, B4, B5] = uuid_to_list(Value),
@@ -81,6 +86,8 @@ uuid_to_string(Value, nodash) ->
                                 [B1, B2, B3, B4, B5])).
 
 
+-spec ipstr_to_ip(Value :: binary() | string()) -> inet:ip4_address().
+
 ipstr_to_ip(Binary) when is_binary(Binary) ->
     ipstr_to_ip(binary_to_list(Binary));
 
@@ -89,17 +96,28 @@ ipstr_to_ip(String) ->
     {I1, I2, I3, I4}.
 
 
+-spec shuffle(List :: [T]) -> [T].
+
 shuffle(L) when is_list(L) ->
   [X || {_, X} <- lists:sort([{random:uniform(), Y} || Y <- L])].
 
+
+-spec resolved_events(Events :: [#resolvedevent{} | #resolvedindexedevent{}]) -> [#event{}].
+
 resolved_events(Events) ->
     lists:map(fun(E) -> resolved_event(E) end, Events).
+
+
+-spec resolved_event(Event :: #resolvedevent{} | #resolvedindexedevent{}) -> #event{}.
 
 resolved_event(E = #resolvedevent{}) ->
     event_rec(E#resolvedevent.event);
 
 resolved_event(E = #resolvedindexedevent{}) ->
     event_rec(E#resolvedindexedevent.event).
+
+
+-spec event_rec(EventRecord :: #eventrecord{}) -> #event{}.
 
 event_rec(E = #eventrecord{}) ->
     #event{stream_id    = list_to_binary(E#eventrecord.event_stream_id),

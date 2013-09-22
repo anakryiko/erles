@@ -201,11 +201,8 @@ retry(Reason, State) ->
 cancel_timer(none) -> ok;
 cancel_timer(TimerRef) -> erlang:cancel_timer(TimerRef).
 
-bool_to_int(Bool) when is_boolean(Bool) ->
-    case Bool of
-        true -> 1;
-        false -> 0
-    end.
+datatype_to_int(raw) -> 0;
+datatype_to_int(json) -> 1.
 
 response_cmd(write_events) ->                write_events_completed;
 response_cmd(transaction_start) ->           transaction_start_completed;
@@ -225,7 +222,7 @@ create_package(CorrId, Auth, write_events, {StreamId, ExpectedVersion, Events, R
         events = lists:map(fun(X) ->
             #newevent{event_id = X#event_data.event_id,
                       event_type = X#event_data.event_type,
-                      data_content_type = bool_to_int(X#event_data.is_json),
+                      data_content_type = datatype_to_int(X#event_data.data_type),
                       metadata_content_type = 0,
                       data = X#event_data.data,
                       metadata = X#event_data.metadata}
@@ -250,7 +247,7 @@ create_package(CorrId, Auth, transaction_write, {TransactionId, Events, RequireM
         events = lists:map(fun(X) ->
             #newevent{event_id = X#event_data.event_id,
                       event_type = X#event_data.event_type,
-                      data_content_type = bool_to_int(X#event_data.is_json),
+                      data_content_type = datatype_to_int(X#event_data.data_type),
                       metadata_content_type = 0,
                       data = X#event_data.data,
                       metadata = X#event_data.metadata}

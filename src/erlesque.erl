@@ -1,5 +1,4 @@
 -module(erlesque).
--export([test/1, test_par/3, test_seq/3]).
 -export([connect/2, connect/3, close/1]).
 -export([ping/1]).
 
@@ -17,10 +16,38 @@
 
 -export([subscribe/2, subscribe/3]).
 
+-export([set_metadata/4, set_metadata/5]).
+-export([get_metadata/2, get_metadata/3, get_metadata/4]).
+
+-include("erlesque.hrl").
+-include("erlesque_internal.hrl").
+
+
 -define(EXPECTED_VERSION_ANY, -2).
 -define(REQUIRE_MASTER, true).
 -define(LAST_EVENT_NUMBER, -1).
 -define(LAST_LOG_POSITION, -1).
+
+%%% METADATA AND SYS SETTINGS
+-define(ET_STREAMMETADATA, <<"$metadata">>).
+-define(ET_SETTINGS, <<"$settings">>).
+
+-define(META_MAXAGE, <<"$maxAge">>).
+-define(META_MAXCOUNT, <<"$maxCount">>).
+-define(META_TRUNCATEBEFORE, <<"$tb">>).
+-define(META_CACHECONTROL, <<"$cacheControl">>).
+-define(META_ACL, <<"$acl">>).
+-define(META_ACLREAD, <<"$r">>).
+-define(META_ACLWRITE, <<"$w">>).
+-define(META_ACLDELETE, <<"$d">>).
+-define(META_ACLMETAREAD, <<"$mr">>).
+-define(META_ACLMETAWRITE, <<"$mw">>).
+
+-define(ROLE_ADMINS, <<"$admins">>).
+-define(ROLE_ALL, <<"$all">>).
+
+-define(SYS_USERSTREAMACL, <<"$userStreamAcl">>).
+-define(SYS_SYSTEMSTREAMACL, <<"$systemStreamAcl">>).
 
 %%% CONNECT
 connect(node, {Ip={_I1, _I2, _I3, _I4}, Port})
@@ -285,34 +312,159 @@ subscribe(Pid, StreamId, Options) ->
 
 subscribe(Pid, StreamId, Auth, ResolveLinks, SubscriberPid) ->
     Stream = case StreamId of
-        all -> <<"">>;
+        all -> <<>>;
         _ -> StreamId
     end,
     gen_fsm:sync_send_event(Pid, {op, {subscribe_to_stream, perm, Auth},
                                       {Stream, ResolveLinks, SubscriberPid}}, infinity).
 
 
-test(Cnt) ->
-    {ok, C} = erlesque:connect({node, {127,0,0,1}, 1113}),
-    {TimePar, _Value1} = timer:tc(fun() -> test_par(Cnt, Cnt, C) end),
-    {TimeSeq, _Value2} = timer:tc(fun() -> test_seq(Cnt, Cnt, C) end),
-    {TimePar, TimeSeq}.
+%%% SET STREAM METADATA
+set_metadata(Pid, StreamId, ExpectedVersion, RawMeta) when is_binary(RawMeta) ->
+    set_metadata(Pid, StreamId, ExpectedVersion, RawMeta, []);
 
-test_par(0, 0, _C) -> ok;
-test_par(0, Cnt2, C) -> receive done -> test_par(0, Cnt2-1, C) end;
-test_par(Cnt1, Cnt2, C) ->
-    Self = self(),
-    spawn_link(fun() ->
-        {ok, _} = erlesque:append(C, <<"test-event">>, any, [erlesque_req_tests:create_event()]),
-        Self ! done
-    end),
-    test_par(Cnt1-1, Cnt2, C).
+set_metadata(Pid, StreamId, ExpectedVersion, Meta = #stream_meta{}) ->
+    set_metadata(Pid, StreamId, ExpectedVersion, Meta, []).
 
-test_seq(0, 0, _C) -> ok;
-test_seq(0, Cnt2, C) -> receive done -> test_seq(0, Cnt2-1, C) end;
-test_seq(Cnt1, Cnt2, C) ->
-    {ok, _} = erlesque:append(C, <<"test-event">>, any, [erlesque_req_tests:create_event()]),
-    self() ! done,
-    test_seq(Cnt1-1, Cnt2, C).
+set_metadata(Pid, StreamId, ExpectedVersion, RawMeta, Options) when is_binary(RawMeta) ->
+    MetaEvent = #event_data{data=RawMeta, data_type=raw, event_type=?ET_STREAMMETADATA},
+    append(Pid, <<"$$", StreamId/binary>>, ExpectedVersion, [MetaEvent], Options);
+
+set_metadata(Pid, StreamId, ExpectedVersion, Meta = #stream_meta{}, Options) ->
+    Json = meta_to_metajson(Meta),
+    JsonBin = jsx:encode(Json),
+    MetaEvent = #event_data{data=JsonBin, data_type=json, event_type=?ET_STREAMMETADATA},
+    append(Pid, <<"$$", StreamId/binary>>, ExpectedVersion, [MetaEvent], Options).
+
+meta_to_metajson(Meta) ->
+    J1 = meta_to_metajson(Meta#stream_meta.custom, custom, []),
+    J2 = meta_to_metajson(Meta#stream_meta.acl, ?META_ACL, J1),
+    J3 = meta_to_metajson(Meta#stream_meta.cache_control, ?META_CACHECONTROL, J2),
+    J4 = meta_to_metajson(Meta#stream_meta.truncate_before, ?META_TRUNCATEBEFORE, J3),
+    J5 = meta_to_metajson(Meta#stream_meta.max_age, ?META_MAXAGE, J4),
+    J6 = meta_to_metajson(Meta#stream_meta.max_count, ?META_MAXCOUNT, J5),
+    case J6 of
+        [] -> [{}]; % JSX's notion of empty JSON object
+        NonEmptyJson -> NonEmptyJson
+    end.
+
+meta_to_metajson(undefined, _JsonKey, MetaJson) ->
+    MetaJson;
+
+meta_to_metajson(Acl=#stream_acl{}, JsonKey=?META_ACL, MetaJson) ->
+    J1 = meta_to_metajson(Acl#stream_acl.metawrite_roles, ?META_ACLMETAWRITE, []),
+    J2 = meta_to_metajson(Acl#stream_acl.metaread_roles, ?META_ACLMETAREAD, J1),
+    J3 = meta_to_metajson(Acl#stream_acl.delete_roles, ?META_ACLDELETE, J2),
+    J4 = meta_to_metajson(Acl#stream_acl.write_roles, ?META_ACLWRITE, J3),
+    J5 = meta_to_metajson(Acl#stream_acl.read_roles, ?META_ACLREAD, J4),
+    AclJson = case J5 of
+        [] -> [{}]; % JSX's notion of empty JSON object
+        NonEmptyJson -> NonEmptyJson
+    end,
+    [{JsonKey, AclJson} | MetaJson];
+
+meta_to_metajson(Values, custom, MetaJson) ->
+    Values ++ MetaJson;
+
+meta_to_metajson(Value, JsonKey, MetaJson) ->
+    [{JsonKey, Value} | MetaJson].
 
 
+%%% GET STREAM METADATA
+get_metadata(Pid, StreamId) ->
+    get_metadata(Pid, StreamId, structured).
+
+get_metadata(Pid, StreamId, structured) ->
+    get_metadata(Pid, StreamId, structured, []);
+
+get_metadata(Pid, StreamId, raw) when is_list(StreamId) ->
+    get_metadata(Pid, list_to_binary(StreamId), raw);
+
+get_metadata(Pid, StreamId, raw) ->
+    get_metadata(Pid, StreamId, raw, []).
+
+get_metadata(Pid, StreamId, structured, Options) ->
+    case get_metadata(Pid, StreamId, raw, Options) of
+        {ok, <<>>, EventNumber} ->
+            {ok, #stream_meta{}, EventNumber};
+        {ok, RawMeta, EventNumber} ->
+            F = fun(_, _, _) -> {error, bad_json} end,
+            Opts = [{error_handler, F}, {incomplete_handler, F}],
+            case jsx:decode(RawMeta, Opts) of
+                {error, bad_json} -> {error, bad_json};
+                MetaJson -> {ok, metajson_to_meta(MetaJson), EventNumber}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end;
+
+get_metadata(Pid, StreamId, raw, Options) ->
+    case read_event(Pid, <<"$$", StreamId/binary>>, last, Options) of
+        {ok, Event=#event{}} ->
+            {ok, Event#event.data, Event#event.event_number};
+        {error, no_stream} ->
+            {ok, <<>>, -1};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+
+metajson_to_meta(MetaJson) ->
+    Meta = metajson_to_meta(MetaJson, #stream_meta{}),
+    case Meta#stream_meta.custom of
+        undefined -> Meta;
+        List when is_list(List) -> Meta#stream_meta{custom=lists:reverse(List)}
+    end.
+
+metajson_to_meta([], Meta) ->
+    Meta;
+
+metajson_to_meta([{}], Meta) ->
+    Meta;
+
+metajson_to_meta([{?META_MAXCOUNT, Value} | Tail], Meta) ->
+    metajson_to_meta(Tail, Meta#stream_meta{max_count=Value});
+
+metajson_to_meta([{?META_MAXAGE, Value} | Tail], Meta) ->
+    metajson_to_meta(Tail, Meta#stream_meta{max_age=Value});
+
+metajson_to_meta([{?META_TRUNCATEBEFORE, Value} | Tail], Meta) ->
+    metajson_to_meta(Tail, Meta#stream_meta{truncate_before=Value});
+
+metajson_to_meta([{?META_CACHECONTROL, Value} | Tail], Meta) ->
+    metajson_to_meta(Tail, Meta#stream_meta{cache_control=Value});
+
+metajson_to_meta([{?META_ACL, Value} | Tail], Meta) ->
+    Acl = acljson_to_acl(Value, #stream_acl{}),
+    metajson_to_meta(Tail, Meta#stream_meta{acl=Acl});
+
+metajson_to_meta([Custom | Tail], Meta) ->
+    CustomMeta = case Meta#stream_meta.custom of
+        undefined -> [Custom];
+        List -> [Custom | List]
+    end,
+    metajson_to_meta(Tail, Meta#stream_meta{custom=CustomMeta}).
+
+acljson_to_acl([], Acl) ->
+    Acl;
+
+acljson_to_acl([{?META_ACLREAD, Value} | Tail], Acl) ->
+    acljson_to_acl(Tail, Acl#stream_acl{read_roles=canon_role(Value)});
+
+acljson_to_acl([{?META_ACLWRITE, Value} | Tail], Acl) ->
+    acljson_to_acl(Tail, Acl#stream_acl{write_roles=canon_role(Value)});
+
+acljson_to_acl([{?META_ACLDELETE, Value} | Tail], Acl) ->
+    acljson_to_acl(Tail, Acl#stream_acl{delete_roles=canon_role(Value)});
+
+acljson_to_acl([{?META_ACLMETAREAD, Value} | Tail], Acl) ->
+    acljson_to_acl(Tail, Acl#stream_acl{metaread_roles=canon_role(Value)});
+
+acljson_to_acl([{?META_ACLMETAWRITE, Value} | Tail], Acl) ->
+    acljson_to_acl(Tail, Acl#stream_acl{metawrite_roles=canon_role(Value)}).
+
+canon_role(Role) ->
+    case Role of
+        Bin when is_binary(Bin) -> [Bin];   % turn single role string into single element array
+        Other -> Other
+    end.
