@@ -416,55 +416,27 @@ metajson_to_meta(MetaJson) ->
         List when is_list(List) -> Meta#stream_meta{custom=lists:reverse(List)}
     end.
 
-metajson_to_meta([], Meta) ->
-    Meta;
+metajson_to_meta([], Meta)                    -> Meta;
+metajson_to_meta([{}], Meta)                  -> Meta;
+metajson_to_meta([{Key, Value} | Tail], Meta) -> metajson_to_meta(Tail, metajson_keyval_to_meta(Key, Value, Meta)).
 
-metajson_to_meta([{}], Meta) ->
-    Meta;
+metajson_keyval_to_meta(?META_MAXCOUNT, Value, Meta)       -> Meta#stream_meta{max_count=Value};
+metajson_keyval_to_meta(?META_MAXAGE, Value, Meta)         -> Meta#stream_meta{max_age=Value};
+metajson_keyval_to_meta(?META_TRUNCATEBEFORE, Value, Meta) -> Meta#stream_meta{truncate_before=Value};
+metajson_keyval_to_meta(?META_CACHECONTROL, Value, Meta)   -> Meta#stream_meta{cache_control=Value};
+metajson_keyval_to_meta(?META_ACL, Value, Meta)            -> Meta#stream_meta{acl=acljson_to_acl(Value, #stream_acl{})};
+metajson_keyval_to_meta(Custom, Value, Meta=#stream_meta{custom=undefined}) -> Meta#stream_meta{custom=[{Custom, Value}]};
+metajson_keyval_to_meta(Custom, Value, Meta=#stream_meta{custom=List})      -> Meta#stream_meta{custom=[{Custom, Value} | List]}.
 
-metajson_to_meta([{?META_MAXCOUNT, Value} | Tail], Meta) ->
-    metajson_to_meta(Tail, Meta#stream_meta{max_count=Value});
+acljson_to_acl([], Acl)                    -> Acl;
+acljson_to_acl([{}], Acl)                  -> Acl;
+acljson_to_acl([{Key, Value} | Tail], Acl) -> acljson_to_acl(Tail, acljson_keyval_to_acl(Key, Value, Acl)).
 
-metajson_to_meta([{?META_MAXAGE, Value} | Tail], Meta) ->
-    metajson_to_meta(Tail, Meta#stream_meta{max_age=Value});
+acljson_keyval_to_acl(?META_ACLREAD, Value, Acl)      -> Acl#stream_acl{read_roles=canon_role(Value)};
+acljson_keyval_to_acl(?META_ACLWRITE, Value, Acl)     -> Acl#stream_acl{write_roles=canon_role(Value)};
+acljson_keyval_to_acl(?META_ACLDELETE, Value, Acl)    -> Acl#stream_acl{delete_roles=canon_role(Value)};
+acljson_keyval_to_acl(?META_ACLMETAREAD, Value, Acl)  -> Acl#stream_acl{metaread_roles=canon_role(Value)};
+acljson_keyval_to_acl(?META_ACLMETAWRITE, Value, Acl) -> Acl#stream_acl{metawrite_roles=canon_role(Value)}.
 
-metajson_to_meta([{?META_TRUNCATEBEFORE, Value} | Tail], Meta) ->
-    metajson_to_meta(Tail, Meta#stream_meta{truncate_before=Value});
-
-metajson_to_meta([{?META_CACHECONTROL, Value} | Tail], Meta) ->
-    metajson_to_meta(Tail, Meta#stream_meta{cache_control=Value});
-
-metajson_to_meta([{?META_ACL, Value} | Tail], Meta) ->
-    Acl = acljson_to_acl(Value, #stream_acl{}),
-    metajson_to_meta(Tail, Meta#stream_meta{acl=Acl});
-
-metajson_to_meta([Custom | Tail], Meta) ->
-    CustomMeta = case Meta#stream_meta.custom of
-        undefined -> [Custom];
-        List -> [Custom | List]
-    end,
-    metajson_to_meta(Tail, Meta#stream_meta{custom=CustomMeta}).
-
-acljson_to_acl([], Acl) ->
-    Acl;
-
-acljson_to_acl([{?META_ACLREAD, Value} | Tail], Acl) ->
-    acljson_to_acl(Tail, Acl#stream_acl{read_roles=canon_role(Value)});
-
-acljson_to_acl([{?META_ACLWRITE, Value} | Tail], Acl) ->
-    acljson_to_acl(Tail, Acl#stream_acl{write_roles=canon_role(Value)});
-
-acljson_to_acl([{?META_ACLDELETE, Value} | Tail], Acl) ->
-    acljson_to_acl(Tail, Acl#stream_acl{delete_roles=canon_role(Value)});
-
-acljson_to_acl([{?META_ACLMETAREAD, Value} | Tail], Acl) ->
-    acljson_to_acl(Tail, Acl#stream_acl{metaread_roles=canon_role(Value)});
-
-acljson_to_acl([{?META_ACLMETAWRITE, Value} | Tail], Acl) ->
-    acljson_to_acl(Tail, Acl#stream_acl{metawrite_roles=canon_role(Value)}).
-
-canon_role(Role) ->
-    case Role of
-        Bin when is_binary(Bin) -> [Bin];   % turn single role string into single element array
-        Other -> Other
-    end.
+canon_role(Role) when is_binary(Role) -> [Role]; % turn single role string into single element array
+canon_role(Roles) when is_list(Roles) -> Roles.
