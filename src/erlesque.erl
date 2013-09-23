@@ -14,7 +14,7 @@
 -export([read_all_forward/3, read_all_forward/4]).
 -export([read_all_backward/3, read_all_backward/4]).
 
--export([subscribe/2, subscribe/3]).
+-export([subscribe/2, subscribe/3, unsubscribe/1]).
 
 -export([set_metadata/4, set_metadata/5]).
 -export([get_metadata/2, get_metadata/3, get_metadata/4]).

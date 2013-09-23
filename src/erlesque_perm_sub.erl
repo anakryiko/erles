@@ -1,36 +1,49 @@
 -module(erlesque_perm_sub).
 -behavior(gen_server).
 
--export([start_link/3, stop/1]).
+-export([start_link/6, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, code_change/3, terminate/2]).
 
 -include("erlesque_internal.hrl").
 
--record(state, {esq_pid,
+-record(state, {worker_pid,
                 sub_pid,
                 sub_mon_ref}).
 
-start_link(A, B, Options) where is_list(Options) ->
-    gen_server:start_link(?MODULE, {A, B, Options}, []).
+-record(worker, {perm_sub_pid,
+                 esq_pid,
+                 sub_pid,
+                 stream_id,
+                 max_count,
+                 opts}).
+
+start_link(StreamId, Pos, EsqPid, SubPid, MaxCount, Options) when is_list(Options) ->
+    gen_server:start_link(?MODULE, {StreamId, Pos, EsqPid, SubPid, MaxCount, Options}, []).
 
 stop(Pid) ->
     gen_server:cast(Pid, stop).
 
 
-init({A, B, Options}) ->
+init({StreamId, Pos, EsqPid, SubPid, MaxCount, Options}) ->
     process_flag(trap_exit, true),
     MonRef = erlang:monitor(process, SubPid),
-    {ok, State#state{sub_mon_ref=MonRef}}.
+    WorkerState = #worker{perm_sub_pid=self(),
+                          esq_pid=EsqPid,
+                          sub_pid=SubPid,
+                          stream_id=StreamId,
+                          max_count=MaxCount,
+                          opts=Options},
+    WorkerPid = spawn_link(fun() -> catchup(WorkerState, Pos) end),
+    State = #state{worker_pid=WorkerPid,
+                   sub_pid=SubPid,
+                   sub_mon_ref=MonRef},
+    {ok, State}.
 
 
 handle_call(Msg, From, State) ->
     io:format("Unexpected CALL message ~p from ~p~n State: ~p~n", [Msg, From, State]),
     {noreply, State}.
 
-
-handle_cast({start, FromPos}, State) ->
-    start_from(FromPos),
-    {noreply, State#state{worker_pid=WorkerPid}};
 
 handle_cast(stop, State) ->
     erlang:demonitor(State#state.sub_mon_ref, [flush]),
@@ -48,7 +61,12 @@ handle_cast(Msg, State) ->
     {noreply, State}.
 
 
-handle_info({'DOWN', MonRef, process, SubPid, Reason}, StateName, State=#state{sub_pid=SubPid, sub_mon_ref=MonRef}) ->
+handle_info({'EXIT', WorkerPid, Reason}, State=#state{worker_pid=WorkerPid}) ->
+    erlang:demonitor(State#state.sub_mon_ref, [flush]),
+    State#state.sub_pid ! {stopped, self(), {worker_failed, Reason}},
+    {stop, normal, State};
+
+handle_info({'DOWN', MonRef, process, SubPid, Reason}, State=#state{sub_pid=SubPid, sub_mon_ref=MonRef}) ->
     io:format("Stopping permanent subscription due to subscriber is DOWN. Reason: ~p.~n", [Reason]),
     State#state.worker_pid ! stop,
     {stop, normal, State};
@@ -64,11 +82,6 @@ terminate(normal, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
--record(worker, {perm_sub_pid,
-                 esq_pid,
-                 subscriber_pid,
-                 max_count,
-                 opts}).
 
 catchup(State, Pos={_PosKind, StreamPos}) ->
     receive stop -> ok
@@ -79,10 +92,10 @@ catchup(State, Pos={_PosKind, StreamPos}) ->
         Opts = State#worker.opts,
         case erlesque:read_stream_forward(EsqPid, StreamId, StreamPos, MaxCount, Opts) of
             {ok, Events, NextPos, false} ->
-                send_events(State#worker.subscriber_pid, Events, Pos),
+                send_events(State#worker.sub_pid, Events, Pos),
                 catchup(State, {inclusive, NextPos});
             {ok, Events, NextPos, true} ->
-                send_events(State#worker.subscriber_pid, Events, Pos),
+                send_events(State#worker.sub_pid, Events, Pos),
                 subscribe(State, {inclusive, NextPos});
             {error, Reason} ->
                 stop(State#worker.perm_sub_pid, {read_failed, Reason})
@@ -112,10 +125,10 @@ switchover(State, Pos={_PosKind, StreamPos}, SubscriptionPid) ->
         Opts = State#worker.opts,
         case erlesque:read_stream_forward(EsqPid, StreamId, StreamPos, MaxCount, Opts) of
             {ok, Events, NextPos, false} ->
-                send_events(State#worker.subscriber_pid, Events, Pos),
+                send_events(State#worker.sub_pid, Events, Pos),
                 switchover(State, {inclusive, NextPos}, SubscriptionPid);
             {ok, Events, NextPos, true} ->
-                send_events(State#worker.subscriber_pid, Events, Pos),
+                send_events(State#worker.sub_pid, Events, Pos),
                 live(State, {inclusive, NextPos}, SubscriptionPid);
             {error, Reason} ->
                 erlesque:unsubscribe(SubscriptionPid),
@@ -132,8 +145,8 @@ live(State, Pos, SubscriptionPid) ->
         {unsubscribed, _Reason} ->
             catchup(State, Pos);
         {event, Event, NewPos} ->
-            send_event(State#worker.subscriber_pid, Event, NewPos, Pos),
-            live({exclusive, NewPos});
+            send_event(State#worker.sub_pid, Event, NewPos, Pos),
+            live(State, {exclusive, NewPos}, SubscriptionPid);
         Unexpected ->
             io:format("Unexpected event in live phase of perm_subscr: ~p.~n", [Unexpected])
     end.
@@ -149,6 +162,6 @@ send_event(Pid, Event, EventPos, {inclusive, SubPos}) when EventPos >= SubPos ->
 send_event(Pid, Event, EventPos, {exclusive, SubPos}) when EventPos > SubPos ->
     Pid ! {event, Event, EventPos};
 
-send_event(_Pid, _Event, _EventPos, {_PosKind, SubPos}) ->
+send_event(_Pid, _Event, _EventPos, {_PosKind, _SubPos}) ->
     ok.
 

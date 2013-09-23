@@ -277,9 +277,9 @@ retry(Reason, State=#state{retries=Retries}) when Retries > 0 ->
 
 retry(Reason, State=#state{retries=Retries}) when Retries =< 0 ->
     io:format("Retrying subscription because ~p... Retries limit reached!~n", [Reason]),
-    complete(State, {error, retry_limit});
+    complete(State, {error, retry_limit}).
 
-cancel_timer(none) -> ok;
+cancel_timer(none)     -> ok;
 cancel_timer(TimerRef) -> erlang:cancel_timer(TimerRef).
 
 drop_reason('AccessDenied') -> access_denied;
