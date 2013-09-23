@@ -1,6 +1,6 @@
 -module(erlesque_utils).
 -export([gen_uuid/0, uuid_to_string/1, uuid_to_string/2]).
--export([ipstr_to_ip/1]).
+-export([parse_ip/1]).
 -export([shuffle/1]).
 -export([resolved_event/1, resolved_events/1]).
 
@@ -86,14 +86,10 @@ uuid_to_string(Value, nodash) ->
                                 [B1, B2, B3, B4, B5])).
 
 
--spec ipstr_to_ip(Value :: binary() | string()) -> inet:ip4_address().
+-spec parse_ip(Value :: binary() | string()) -> inet:ip_address().
 
-ipstr_to_ip(Binary) when is_binary(Binary) ->
-    ipstr_to_ip(binary_to_list(Binary));
-
-ipstr_to_ip(String) ->
-    {ok, [I1, I2, I3, I4], _} = io_lib:fread("~d.~d.~d.~d", String),
-    {I1, I2, I3, I4}.
+parse_ip(Bin) when is_binary(Bin) -> parse_ip(binary_to_list(Bin));
+parse_ip(String)                  -> {ok, Addr} = inet:parse_address(String), Addr.
 
 
 -spec shuffle(List :: [T]) -> [T].

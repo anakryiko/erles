@@ -304,9 +304,9 @@ get_gossip(_Ip={I1, I2, I3, I4}, Port, Timeout) ->
 get_member(Member) ->
     State = node_state(proplists:get_value(<<"state">>, Member)),
     IsAlive = proplists:get_value(<<"isAlive">>, Member),
-    TcpIp = erlesque_utils:ipstr_to_ip(proplists:get_value(<<"externalTcpIp">>, Member)),
+    TcpIp = erlesque_utils:parse_ip(proplists:get_value(<<"externalTcpIp">>, Member)),
     TcpPort = proplists:get_value(<<"externalTcpPort">>, Member),
-    HttpIp = erlesque_utils:ipstr_to_ip(proplists:get_value(<<"externalHttpIp">>, Member)),
+    HttpIp = erlesque_utils:parse_ip(proplists:get_value(<<"externalHttpIp">>, Member)),
     HttpPort = proplists:get_value(<<"externalHttpPort">>, Member),
     {IsAlive, #node{state=State,
                     tcp_ip=TcpIp,

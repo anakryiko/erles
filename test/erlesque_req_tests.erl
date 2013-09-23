@@ -37,7 +37,8 @@ reqs_test_() ->
          metadata_struct_get_incomplete_json_fails(D),
          metadata_struct_set_raw_read_structured(D),
          metadata_struct_set_structured_read_structured(D),
-         metadata_struct_set_structured_read_raw(D)
+         metadata_struct_set_structured_read_raw(D),
+         metadata_struct_set_empty_acl_works(D)
         ]
      end}.
 
@@ -323,6 +324,15 @@ metadata_struct_set_structured_read_raw(C) ->
     Opts = [{auth, {<<"admin">>, <<"changeit">>}}],
     [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, MetaStruct, Opts)),
      ?_assertEqual({ok, MetaBin, 0}, erlesque:get_metadata(C, S, raw, Opts))
+    ].
+
+metadata_struct_set_empty_acl_works(C) ->
+    S = gen_stream_id(),
+    MetaStruct = #stream_meta{acl=#stream_acl{}},
+    MetaBin = <<"{\"$acl\":{}}">>,
+    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, MetaStruct)),
+     ?_assertEqual({ok, MetaStruct, 0}, erlesque:get_metadata(C, S, structured)),
+     ?_assertEqual({ok, MetaBin, 0}, erlesque:get_metadata(C, S, raw))
     ].
 
 struct_meta_as_binary() ->

@@ -53,7 +53,7 @@ handle_sync_event(Event, From, StateName, State) ->
 
 
 disconnected(connected, State) ->
-    issue_request(State);
+    issue_subscribe_request(State);
 
 disconnected({aborted, Reason}, State) ->
     abort(State, {error, {aborted, Reason}});
@@ -76,7 +76,7 @@ pending({pkg, Cmd, CorrId, _Auth, Data}, State=#state{corr_id=CorrId}) ->
             Dto = erlesque_clientapi_pb:decode_subscriptionconfirmation(Data),
             LastCommitPos = Dto#subscriptionconfirmation.last_commit_position,
             LastEventNumber = Dto#subscriptionconfirmation.last_event_number,
-            gen_fsm:reply(State#state.reply_pid, {ok, {LastCommitPos, LastEventNumber}}),
+            gen_fsm:reply(State#state.reply_pid, {ok, self(), {LastCommitPos, LastEventNumber}}),
             NewState = succeed(State),
             {next_state, subscribed, NewState};
         subscription_dropped ->
@@ -123,7 +123,7 @@ pending(Msg, From, State) ->
 
 
 retry_pending({timeout, TimerRef, retry}, State=#state{timer_ref=TimerRef}) ->
-    issue_request(State);
+    issue_subscribe_request(State);
 
 retry_pending(disconnected, State) ->
     cancel_timer(State#state.timer_ref),
@@ -173,6 +173,11 @@ subscribed({subscriber_down, Reason}, State=#state{}) ->
     notify(State, {unsubscribed, {subscriber_down, Reason}}),
     complete(State);
 
+subscribed(unsubscribe, State) ->
+    issue_unsubscribe_request(State),
+    notify(State, {unsubscribed, requested_by_client}),
+    complete(State);
+
 subscribed(Msg, State) ->
     io:format("Unexpected ASYNC EVENT ~p, state name ~p, state data ~p~n", [Msg, subscribed, State]),
     {next_state, retry_pending, State}.
@@ -202,7 +207,7 @@ code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
 
 
-issue_request(State=#state{}) ->
+issue_subscribe_request(State=#state{}) ->
     Dto = #subscribetostream{
         event_stream_id = State#state.stream_id,
         resolve_link_tos = State#state.resolve_links
@@ -213,28 +218,35 @@ issue_request(State=#state{}) ->
     TimerRef = erlang:start_timer(State#state.timeout, self(), timeout),
     {next_state, pending, State#state{timer_ref=TimerRef}}.
 
-complete(State=#state{}, Result) ->
+issue_unsubscribe_request(State) ->
+    Dto = #unsubscribefromstream{},
+    Bin = erlesque_clientapi_pb:encode_unsubscribefromstream(Dto),
+    Pkg = erlesque_pkg:create(unsubscribe_from_stream, State#state.corr_id, State#state.auth, Bin),
+    erlesque_conn:send(State#state.conn_pid, Pkg).
+
+complete(State, Result) ->
     cancel_timer(State#state.timer_ref),
     gen_fsm:reply(State#state.reply_pid, Result),
     erlesque_fsm:operation_completed(State#state.esq_pid, State#state.corr_id),
     erlang:demonitor(State#state.sub_mon_ref, [flush]),
     {stop, normal, State}.
 
-complete(State=#state{}) ->
+complete(State) ->
+    cancel_timer(State#state.timer_ref),
     erlesque_fsm:operation_completed(State#state.esq_pid, State#state.corr_id),
     erlang:demonitor(State#state.sub_mon_ref, [flush]),
     {stop, normal, State}.
 
-succeed(State=#state{}) ->
+succeed(State) ->
     cancel_timer(State#state.timer_ref),
     State#state{timer_ref=none}.
 
-abort(State=#state{}, Result) ->
+abort(State, Result) ->
     cancel_timer(State#state.timer_ref),
     gen_fsm:reply(State#state.reply_pid, Result),
     {stop, normal, State}.
 
-notify(State=#state{}, Msg) ->
+notify(State, Msg) ->
     State#state.sub_pid ! Msg.
 
 not_handled(Data, State) ->
@@ -242,13 +254,12 @@ not_handled(Data, State) ->
     case Dto#nothandled.reason of
         'NotMaster' ->
             MasterInfo = erlesque_clientapi_pb:decode_nothandled_masterinfo(Dto#nothandled.additional_info),
-            IpStr = MasterInfo#nothandled_masterinfo.external_tcp_address,
-            Ip = erlesque_utils:ipstr_to_ip(IpStr),
+            Ip = erlesque_utils:parse_ip(MasterInfo#nothandled_masterinfo.external_tcp_address),
             Port = MasterInfo#nothandled_masterinfo.external_tcp_port,
             cancel_timer(State#state.timer_ref),
             case erlesque_conn:reconnect(State#state.conn_pid, Ip, Port) of
                 already_connected ->
-                    issue_request(State);
+                    issue_subscribe_request(State);
                 ok ->
                     {next_state, disconnected, State#state{timer_ref=none}}
             end;
@@ -256,26 +267,21 @@ not_handled(Data, State) ->
             retry(OtherReason, State)
     end.
 
-retry(Reason, State) ->
+retry(Reason, State=#state{retries=Retries}) when Retries > 0 ->
     io:format("Retrying subscription because ~p.~n", [Reason]),
-    Retries = State#state.retries - 1,
-    case Retries >= 0 of
-        true ->
-            cancel_timer(State#state.timer_ref),
-            NewCorrId = erlesque_utils:gen_uuid(),
-            erlesque_fsm:operation_restarted(State#state.esq_pid, State#state.corr_id, NewCorrId),
-            TimerRef = erlang:start_timer(State#state.retry_delay, self(), retry),
-            {next_state, retry_pending, State#state{corr_id=NewCorrId, retries=Retries, timer_ref=TimerRef}};
-        false ->
-            complete(State, {error, retry_limit})
-    end.
+    cancel_timer(State#state.timer_ref),
+    NewCorrId = erlesque_utils:gen_uuid(),
+    erlesque_fsm:operation_restarted(State#state.esq_pid, State#state.corr_id, NewCorrId),
+    TimerRef = erlang:start_timer(State#state.retry_delay, self(), retry),
+    {next_state, retry_pending, State#state{corr_id=NewCorrId, retries=Retries-1, timer_ref=TimerRef}};
+
+retry(Reason, State=#state{retries=Retries}) when Retries =< 0 ->
+    io:format("Retrying subscription because ~p... Retries limit reached!~n", [Reason]),
+    complete(State, {error, retry_limit});
 
 cancel_timer(none) -> ok;
 cancel_timer(TimerRef) -> erlang:cancel_timer(TimerRef).
 
-drop_reason(Reason) ->
-    case Reason of
-        'AccessDenied' -> access_denied;
-        'Unsubscribed' -> unsubscribed;
-        Other -> Other
-    end.
+drop_reason('AccessDenied') -> access_denied;
+drop_reason('Unsubscribed') -> unsubscribed;
+drop_reason(Reason)         -> Reason.

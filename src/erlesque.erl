@@ -318,6 +318,9 @@ subscribe(Pid, StreamId, Auth, ResolveLinks, SubscriberPid) ->
     gen_fsm:sync_send_event(Pid, {op, {subscribe_to_stream, perm, Auth},
                                       {Stream, ResolveLinks, SubscriberPid}}, infinity).
 
+unsubscribe(SubscriptionPid) ->
+    gen_fsm:send_event(SubscriptionPid, unsubscribe).
+
 
 %%% SET STREAM METADATA
 set_metadata(Pid, StreamId, ExpectedVersion, RawMeta) when is_binary(RawMeta) ->
@@ -410,33 +413,29 @@ get_metadata(Pid, StreamId, raw, Options) ->
 
 
 metajson_to_meta(MetaJson) ->
-    Meta = metajson_to_meta(MetaJson, #stream_meta{}),
+    Meta = lists:foldl(fun metajson_keyval_to_meta/2, #stream_meta{}, MetaJson),
     case Meta#stream_meta.custom of
         undefined -> Meta;
         List when is_list(List) -> Meta#stream_meta{custom=lists:reverse(List)}
     end.
 
-metajson_to_meta([], Meta)                    -> Meta;
-metajson_to_meta([{}], Meta)                  -> Meta;
-metajson_to_meta([{Key, Value} | Tail], Meta) -> metajson_to_meta(Tail, metajson_keyval_to_meta(Key, Value, Meta)).
+metajson_keyval_to_meta({}, Meta)                            -> Meta;
+metajson_keyval_to_meta({?META_MAXCOUNT, Value}, Meta)       -> Meta#stream_meta{max_count=Value};
+metajson_keyval_to_meta({?META_MAXAGE, Value}, Meta)         -> Meta#stream_meta{max_age=Value};
+metajson_keyval_to_meta({?META_TRUNCATEBEFORE, Value}, Meta) -> Meta#stream_meta{truncate_before=Value};
+metajson_keyval_to_meta({?META_CACHECONTROL, Value}, Meta)   -> Meta#stream_meta{cache_control=Value};
+metajson_keyval_to_meta({?META_ACL, Value}, Meta)            -> Meta#stream_meta{acl=acljson_to_acl(Value)};
+metajson_keyval_to_meta({Custom, Value}, Meta=#stream_meta{custom=undefined}) -> Meta#stream_meta{custom=[{Custom, Value}]};
+metajson_keyval_to_meta({Custom, Value}, Meta=#stream_meta{custom=List})      -> Meta#stream_meta{custom=[{Custom, Value} | List]}.
 
-metajson_keyval_to_meta(?META_MAXCOUNT, Value, Meta)       -> Meta#stream_meta{max_count=Value};
-metajson_keyval_to_meta(?META_MAXAGE, Value, Meta)         -> Meta#stream_meta{max_age=Value};
-metajson_keyval_to_meta(?META_TRUNCATEBEFORE, Value, Meta) -> Meta#stream_meta{truncate_before=Value};
-metajson_keyval_to_meta(?META_CACHECONTROL, Value, Meta)   -> Meta#stream_meta{cache_control=Value};
-metajson_keyval_to_meta(?META_ACL, Value, Meta)            -> Meta#stream_meta{acl=acljson_to_acl(Value, #stream_acl{})};
-metajson_keyval_to_meta(Custom, Value, Meta=#stream_meta{custom=undefined}) -> Meta#stream_meta{custom=[{Custom, Value}]};
-metajson_keyval_to_meta(Custom, Value, Meta=#stream_meta{custom=List})      -> Meta#stream_meta{custom=[{Custom, Value} | List]}.
+acljson_to_acl(AclJson) -> lists:foldl(fun acljson_keyval_to_acl/2, #stream_acl{}, AclJson).
 
-acljson_to_acl([], Acl)                    -> Acl;
-acljson_to_acl([{}], Acl)                  -> Acl;
-acljson_to_acl([{Key, Value} | Tail], Acl) -> acljson_to_acl(Tail, acljson_keyval_to_acl(Key, Value, Acl)).
-
-acljson_keyval_to_acl(?META_ACLREAD, Value, Acl)      -> Acl#stream_acl{read_roles=canon_role(Value)};
-acljson_keyval_to_acl(?META_ACLWRITE, Value, Acl)     -> Acl#stream_acl{write_roles=canon_role(Value)};
-acljson_keyval_to_acl(?META_ACLDELETE, Value, Acl)    -> Acl#stream_acl{delete_roles=canon_role(Value)};
-acljson_keyval_to_acl(?META_ACLMETAREAD, Value, Acl)  -> Acl#stream_acl{metaread_roles=canon_role(Value)};
-acljson_keyval_to_acl(?META_ACLMETAWRITE, Value, Acl) -> Acl#stream_acl{metawrite_roles=canon_role(Value)}.
+acljson_keyval_to_acl({}, Acl)                          -> Acl;
+acljson_keyval_to_acl({?META_ACLREAD, Value}, Acl)      -> Acl#stream_acl{read_roles=canon_role(Value)};
+acljson_keyval_to_acl({?META_ACLWRITE, Value}, Acl)     -> Acl#stream_acl{write_roles=canon_role(Value)};
+acljson_keyval_to_acl({?META_ACLDELETE, Value}, Acl)    -> Acl#stream_acl{delete_roles=canon_role(Value)};
+acljson_keyval_to_acl({?META_ACLMETAREAD, Value}, Acl)  -> Acl#stream_acl{metaread_roles=canon_role(Value)};
+acljson_keyval_to_acl({?META_ACLMETAWRITE, Value}, Acl) -> Acl#stream_acl{metawrite_roles=canon_role(Value)}.
 
 canon_role(Role) when is_binary(Role) -> [Role]; % turn single role string into single element array
 canon_role(Roles) when is_list(Roles) -> Roles.

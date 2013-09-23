@@ -170,8 +170,7 @@ not_handled(Data, State) ->
     case Dto#nothandled.reason of
         'NotMaster' ->
             MasterInfo = erlesque_clientapi_pb:decode_nothandled_masterinfo(Dto#nothandled.additional_info),
-            IpStr = MasterInfo#nothandled_masterinfo.external_tcp_address,
-            Ip = erlesque_utils:ipstr_to_ip(IpStr),
+            Ip = erlesque_utils:parse_ip(MasterInfo#nothandled_masterinfo.external_tcp_address),
             Port = MasterInfo#nothandled_masterinfo.external_tcp_port,
             cancel_timer(State#state.timer_ref),
             case erlesque_conn:reconnect(State#state.conn_pid, Ip, Port) of
