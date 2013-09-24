@@ -21,36 +21,8 @@
 -include("erles_internal.hrl").
 
 
--define(EXPVER_ANY, -2).
--define(LAST_EVENT_NUM, -1).
--define(LAST_LOG_POS, -1).
--define(DEF_AUTH, defauth).
--define(DEF_RESOLVE, true).
--define(DEF_REQ_MASTER, true).
-
-%%% METADATA AND SYS SETTINGS
--define(ET_STREAMMETADATA, <<"$metadata">>).
--define(ET_SETTINGS, <<"$settings">>).
-
--define(META_MAXAGE, <<"$maxAge">>).
--define(META_MAXCOUNT, <<"$maxCount">>).
--define(META_TRUNCATEBEFORE, <<"$tb">>).
--define(META_CACHECONTROL, <<"$cacheControl">>).
--define(META_ACL, <<"$acl">>).
--define(META_ACLREAD, <<"$r">>).
--define(META_ACLWRITE, <<"$w">>).
--define(META_ACLDELETE, <<"$d">>).
--define(META_ACLMETAREAD, <<"$mr">>).
--define(META_ACLMETAWRITE, <<"$mw">>).
-
--define(ROLE_ADMINS, <<"$admins">>).
--define(ROLE_ALL, <<"$all">>).
-
--define(SYS_USERSTREAMACL, <<"$userStreamAcl">>).
--define(SYS_SYSTEMSTREAMACL, <<"$systemStreamAcl">>).
-
 %%% CONNECT
-connect(node, {Ip={_I1, _I2, _I3, _I4}, Port})
+connect(node, {Ip, Port})
         when is_integer(Port), Port > 0, Port < 65536 ->
     erles_fsm:start_link({node, Ip, Port});
 
@@ -64,7 +36,7 @@ connect(cluster, SeedNodes)
     erles_fsm:start_link({cluster, SeedNodes}).
 
 
-connect(node, {Ip={_I1, _I2, _I3, _I4}, Port}, Options)
+connect(node, {Ip, Port}, Options)
         when is_integer(Port), Port > 0, Port < 65536,
              is_list(Options) ->
     erles_fsm:start_link({node, Ip, Port}, Options);
@@ -87,7 +59,7 @@ close(Pid) ->
 
 %%% PING
 ping(Pid) ->
-    gen_fsm:sync_send_event(Pid, {op, {ping, temp, ?DEF_AUTH}, []}).
+    gen_fsm:sync_send_event(Pid, {op, {ping, temp, noauth}, {}}, infinity).
 
 
 %%% APPEND EVENTS TO STREAM

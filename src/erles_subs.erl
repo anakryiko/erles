@@ -105,7 +105,7 @@ pending({pkg, Cmd, CorrId, _Auth, Data}, State=#state{corr_id=CorrId}) ->
     end;
 
 pending({timeout, TimerRef, timeout}, State=#state{timer_ref=TimerRef}) ->
-    complete(State, {error, server_not_responded});
+    complete(State, {error, server_timeout});
 
 pending(disconnected, State) ->
     Retries = State#state.retries - 1,
@@ -197,7 +197,7 @@ subscribed(Msg, From, State) ->
     {next_state, retry, State}.
 
 
-handle_info(TimerMsg={timer, _, _}, StateName, State) ->
+handle_info(TimerMsg={timeout, _, _}, StateName, State) ->
     gen_fsm:send_event(self(), TimerMsg),
     {next_state, StateName, State};
 

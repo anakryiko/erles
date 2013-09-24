@@ -1,6 +1,8 @@
 -module(erles_ops).
 -export([start_link/3, connected/1, disconnected/1, aborted/2, handle_pkg/2]).
 
+start_link(ReqCmd=ping, SysParams, OpParams) ->
+    gen_fsm:start_link(erles_reqs, {ReqCmd, SysParams, OpParams}, []);
 start_link(ReqCmd=write_events, SysParams, OpParams) ->
     gen_fsm:start_link(erles_reqs, {ReqCmd, SysParams, OpParams}, []);
 start_link(ReqCmd=transaction_start, SysParams, OpParams) ->
@@ -21,7 +23,6 @@ start_link(ReqCmd=read_all_events_forward, SysParams, OpParams) ->
     gen_fsm:start_link(erles_reqs, {ReqCmd, SysParams, OpParams}, []);
 start_link(ReqCmd=read_all_events_backward, SysParams, OpParams) ->
     gen_fsm:start_link(erles_reqs, {ReqCmd, SysParams, OpParams}, []);
-
 start_link(ReqCmd=subscribe_to_stream, SysParams, OpParams) ->
     gen_fsm:start_link(erles_subs, {ReqCmd, SysParams, OpParams}, []).
 

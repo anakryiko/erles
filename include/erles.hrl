@@ -1,14 +1,16 @@
 -type uuid() :: <<_:128>>.
 
+%% Event data to send for write to Event Store
 -record(event_data,
         {
-            event_id = erles_utils:gen_uuid()              :: uuid(),
+            event_id = erles_utils:gen_uuid()                 :: uuid(),
             event_type = erlang:error({required, event_type}) :: binary() | string(),
             data_type = raw                                   :: 'raw' | 'json',
             data = erlang:error({required, data})             :: binary(),
             metadata = <<>>                                   :: binary()
         }).
 
+%% Committed event data returned from read requests and subscriptions
 -record(event,
         {
             stream_id         :: binary(),
@@ -19,13 +21,7 @@
             metadata = <<>>   :: binary()
         }).
 
--record(resolved_event,
-        {
-            event,
-            link,
-            position = unknown
-        }).
-
+%% Stream ACL structure
 -record(stream_acl,
         {
             read_roles      :: 'undefined' | [binary()],
@@ -35,6 +31,7 @@
             metawrite_roles :: 'undefined' | [binary()]
         }).
 
+%% Stream metadata structure
 -record(stream_meta,
         {
             max_count       :: 'undefined' | pos_integer(),

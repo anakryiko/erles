@@ -9,23 +9,6 @@
 
 -include("erles_internal.hrl").
 
--define(CONNECTION_TIMEOUT, 2000).
--define(RECONNECTION_DELAY, 500).
--define(MAX_CONNECTION_RETRIES, 10).
--define(HEARTBEAT_PERIOD, 500).
--define(HEARTBEAT_TIMEOUT, 1000).
-
--define(DNS_TIMEOUT, 2000).
--define(GOSSIP_TIMEOUT, 1000).
--define(DISCOVER_DELAY, 200).
--define(MAX_DISCOVER_RETRIES, 10).
-
--define(MAX_SERVER_OPS, 2000).
--define(OPERATION_TIMEOUT, 7000).
--define(OPERATION_RETRIES, 10).
--define(RETRY_DELAY, 500).
--define(DEFAULT_AUTH, noauth).
-
 -record(state, {conn_pid,
                 sup_pid,
                 waiting_ops = queue:new(),
@@ -55,24 +38,12 @@ operation_restarted(Pid, OldCorrId, NewCorrId) ->
 
 init({Destination, Options}) ->
     %% OPERATIONS SETTINGS
-    MaxServerOps = case proplists:lookup(max_server_ops, Options) of
-        none -> ?MAX_SERVER_OPS;
-        {_, V1} when is_integer(V1), V1 > 0 -> V1
-    end,
-    OpTimeout = case proplists:lookup(operation_timeout, Options) of
-        none -> ?OPERATION_TIMEOUT;
-        {_, V2} when is_integer(V2), V2 > 0 -> V2
-    end,
-    OpRetries = case proplists:lookup(operation_retries, Options) of
-        none -> ?OPERATION_RETRIES;
-        {_, V3} when is_integer(V3), V3 >= 0 -> V3
-    end,
-    RetryDelay = case proplists:lookup(retry_delay, Options) of
-        none -> ?RETRY_DELAY;
-        {_, V4} when is_integer(V4), V4 >= 0 -> V4
-    end,
-    DefaultAuth = case proplists:lookup(default_auth, Options) of
-        none -> ?DEFAULT_AUTH;
+    MaxServerOps = get_opt(Options, max_server_ops,    ?DEF_MAX_SERVER_OPS, positive),
+    OpTimeout    = get_opt(Options, operation_timeout, ?DEF_OPERATION_TIMEOUT, positive),
+    OpRetries    = get_opt(Options, operation_retries, ?DEF_OPERATION_RETRIES, non_neg),
+    RetryDelay   = get_opt(Options, retry_delay,       ?DEF_RETRY_DELAY, non_neg),
+    DefaultAuth  = case proplists:lookup(default_auth, Options) of
+        none -> ?DEF_DEFAULT_AUTH;
         {_, {Login, Pass}} -> {Login, Pass};
         {_, noauth} -> noauth
     end,
@@ -204,7 +175,7 @@ handle_pkg(State=#state{active_ops=Ops}, Pkg={pkg, _Cmd, CorrId, _Auth, _Data}) 
         {ok, #act_op{pid=Pid}} ->
             erles_ops:handle_pkg(Pid, Pkg);
         error ->
-            io:format("No operation with corrid ~p, pkg ~p~nOps: ~p~n", [CorrId, Pkg, Ops]),
+            io:format("No operation with corrid ~p,~npkg ~p~nOps: ~p~n", [CorrId, Pkg, Ops]),
             ok
     end,
     State.
@@ -259,42 +230,15 @@ abort_operations(ActiveOps, WaitingOps, Reason) ->
 
 get_connection_settings(Options) ->
     %% CONNECTION SETTINGS
-    ConnTimeout = case proplists:lookup(connection_timeout, Options) of
-        none -> ?CONNECTION_TIMEOUT;
-        {_, V0} when is_integer(V0), V0 > 0 -> V0
-    end,
-    ReconnDelay = case proplists:lookup(reconnection_delay, Options) of
-        none -> ?RECONNECTION_DELAY;
-        {_, V1} when is_integer(V1), V1 >= 0 -> V1
-    end,
-    MaxConnRetries = case proplists:lookup(max_conn_retries, Options) of
-        none -> ?MAX_CONNECTION_RETRIES;
-        {_, V2} when is_integer(V2), V2 >= 0 -> V2
-    end,
-    HeartbeatPeriod = case proplists:lookup(heartbeat_period, Options) of
-        none -> ?HEARTBEAT_PERIOD;
-        {_, V3} when is_integer(V3), V3 > 0 -> V3
-    end,
-    HeartbeatTimeout = case proplists:lookup(heartbeat_timeout, Options) of
-        none -> ?HEARTBEAT_TIMEOUT;
-        {_, V4} when is_integer(V4), V4 > 0 -> V4
-    end,
-    DnsTimeout = case proplists:lookup(dns_timeout, Options) of
-        none -> ?DNS_TIMEOUT;
-        {_, V5} when is_integer(V5), V5 > 0 -> V5
-    end,
-    GossipTimeout = case proplists:lookup(gossip_timeout, Options) of
-        none -> ?GOSSIP_TIMEOUT;
-        {_, V6} when is_integer(V6), V6 > 0 -> V6
-    end,
-    DiscoverDelay = case proplists:lookup(discover_delay, Options) of
-        none -> ?DISCOVER_DELAY;
-        {_, V7} when is_integer(V7), V7 >= 0 -> V7
-    end,
-    MaxDiscoverRetries = case proplists:lookup(max_discover_retries, Options) of
-        none -> ?MAX_DISCOVER_RETRIES;
-        {_, V8} when is_integer(V8), V8 >= 0 -> V8
-    end,
+    ConnTimeout        = get_opt(Options, connection_timeout,   ?DEF_CONNECTION_TIMEOUT, positive),
+    ReconnDelay        = get_opt(Options, reconnection_delay,   ?DEF_RECONNECTION_DELAY, non_neg),
+    MaxConnRetries     = get_opt(Options, max_conn_retries,     ?DEF_MAX_CONNECTION_RETRIES, non_neg),
+    HeartbeatPeriod    = get_opt(Options, heartbeat_period,     ?DEF_HEARTBEAT_PERIOD, positive),
+    HeartbeatTimeout   = get_opt(Options, heartbeat_timeout,    ?DEF_HEARTBEAT_TIMEOUT, positive),
+    DnsTimeout         = get_opt(Options, dns_timeout,          ?DEF_DNS_TIMEOUT, positive),
+    GossipTimeout      = get_opt(Options, gossip_timeout,       ?DEF_GOSSIP_TIMEOUT, positive),
+    DiscoverDelay      = get_opt(Options, discover_delay,       ?DEF_DISCOVER_DELAY, non_neg),
+    MaxDiscoverRetries = get_opt(Options, max_discover_retries, ?DEF_MAX_DISCOVER_RETRIES, non_neg),
     #conn_settings{conn_timeout=ConnTimeout,
                    reconn_delay=ReconnDelay,
                    max_conn_retries=MaxConnRetries,
@@ -304,3 +248,15 @@ get_connection_settings(Options) ->
                    gossip_timeout=GossipTimeout,
                    discover_delay=DiscoverDelay,
                    max_discover_retries=MaxDiscoverRetries}.
+
+get_opt(Options, Key, Default, positive) ->
+    case proplists:lookup(Key, Options) of
+        none -> Default;
+        {_, V} when is_integer(V), V > 0 -> V
+    end;
+
+get_opt(Options, Key, Default, non_neg) ->
+    case proplists:lookup(Key, Options) of
+        none -> Default;
+        {_, V} when is_integer(V), V >= 0 -> V
+    end.

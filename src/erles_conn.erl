@@ -10,7 +10,9 @@
                 destination=unknown,
                 socket=none,
                 cur_endpoint=none,
-                settings}).
+                settings,
+                timer_ref=none,
+                msg_num=0}).
 
 -record(node, {state, tcp_ip, tcp_port, http_ip, http_port}).
 
@@ -30,18 +32,12 @@ stop(Pid) ->
 send(Pid, Pkg) ->
     gen_server:cast(Pid, {send, Pkg}).
 
-
+%% INTERNALS
 init(State=#state{}) ->
     {ok, State}.
 
 handle_call(stop, _From, State) ->
-    case State#state.socket of
-        none ->
-            ok;
-        _ ->
-            ok = gen_tcp:close(State#state.socket),
-            State#state.esq_pid ! {disconnected, State#state.cur_endpoint, conn_closed}
-    end,
+    close_tcp(State, conn_closed),
     State#state.esq_pid ! {closed, closed_by_client},
     {stop, normal, ok, State};
 
@@ -49,23 +45,10 @@ handle_call(stop, _From, State) ->
 handle_call({reconnect, Ip, Port}, _From, State=#state{cur_endpoint={Ip, Port}}) ->
     {reply, already_connected, State};
 
-handle_call({reconnect, Ip, Port}, _From, State) ->
-    case State#state.socket of
-        none ->
-            ok;
-        Socket ->
-            io:format("Reconnecting from ~p to ~p.~n", [State#state.cur_endpoint, {Ip, Port}]),
-            ok = gen_tcp:close(Socket),
-            State#state.esq_pid ! {disconnected, State#state.cur_endpoint, conn_switch}
-    end,
-    case connect(switch, State, {node, Ip, Port}, none) of
-        {ok, NewState} ->
-            State#state.esq_pid ! {connected, NewState#state.cur_endpoint},
-            {reply, ok, NewState};
-        {error, Reason} ->
-            State#state.esq_pid ! {closed, Reason},
-            {stop, normal, ok, State}
-    end;
+handle_call({reconnect, Ip, Port}, From, State) ->
+    close_tcp(State, connection_switch),
+    gen_server:reply(From, ok),
+    establish_connection(State, switch, {node, Ip, Port}, none);
 
 handle_call(Msg, From, State) ->
     io:format("Unexpected CALL message ~p from ~p~n State: ~p~n", [Msg, From, State]),
@@ -73,15 +56,7 @@ handle_call(Msg, From, State) ->
 
 
 handle_cast(connect, State) ->
-    io:format("Connection to ~p requested.~n", [State#state.destination]),
-    case connect(connect, State, State#state.destination, none) of
-        {ok, NewState} ->
-            State#state.esq_pid ! {connected, NewState#state.cur_endpoint},
-            {noreply, NewState};
-        {error, Reason} ->
-            State#state.esq_pid ! {closed, Reason},
-            {stop, normal, State}
-    end;
+    establish_connection(State, connect, State#state.destination, none);
 
 handle_cast({send, Pkg}, State) ->
     case Pkg of
@@ -96,31 +71,45 @@ handle_cast(Msg, State) ->
     {noreply, State}.
 
 
-handle_info({tcp, Socket, Data}, State=#state{socket=Socket}) ->
+handle_info({timeout, TimerRef, {heartbeat, MsgNum}}, State=#state{timer_ref=TimerRef}) ->
+    NewState = case State#state.msg_num > MsgNum of
+        true  -> start_heartbeat(State);
+        false -> send_heartbeat(State)
+    end,
+    {noreply, NewState};
+
+handle_info({timeout, TimerRef, {heartbeat_timeout, MsgNum}}, State=#state{timer_ref=TimerRef}) ->
+    case State#state.msg_num > MsgNum of
+        true ->
+            NewState = start_heartbeat(State),
+            {noreply, NewState};
+        false ->
+            close_tcp(State, heartbeat_timeout),
+            establish_connection(State, reconnect, State#state.destination, State#state.cur_endpoint)
+    end;
+
+handle_info({timeout, _, _}, State) ->
+    {noreply, State};
+
+handle_info({tcp, Socket, Data}, State=#state{socket=Socket, msg_num=MsgNum}) ->
     Pkg = erles_pkg:from_binary(Data),
     case Pkg of
         {pkg, heartbeat_req, CorrId, _Auth, PkgData} ->
             send_pkg(Socket, erles_pkg:create(heartbeat_resp, CorrId, PkgData));
+        {pkg, heartbeat_resp, _CorrId, _Auth, _PkgData} ->
+            ok;
         _Other ->
             io:format("Package received: ~p~n", [Pkg]),
             State#state.esq_pid ! {package, Pkg}
     end,
-    {noreply, State};
+    {noreply, State#state{msg_num=MsgNum+1}};
 
 handle_info({tcp, _Socket, _Data}, State) ->
     {noreply, State};
 
 handle_info({tcp_closed, Socket}, State=#state{socket=Socket}) ->
-    io:format("Connection to ~p closed.~n", [State#state.cur_endpoint]),
-    State#state.esq_pid ! {disconnected, State#state.cur_endpoint, tcp_closed},
-    case connect(reconnect, State, State#state.destination, State#state.cur_endpoint) of
-        {ok, NewState} ->
-            State#state.esq_pid ! {connected, NewState#state.cur_endpoint},
-            {noreply, NewState};
-        {error, Reason} ->
-            State#state.esq_pid ! {closed, Reason},
-            {stop, normal, State}
-    end;
+    close_tcp(State, tcp_closed),
+    establish_connection(State, reconnect, State#state.destination, State#state.cur_endpoint);
 
 handle_info({tcp_closed, _Socket}, State) ->
     {noreply, State};
@@ -136,6 +125,7 @@ handle_info(Msg, State) ->
     io:format("Unexpected INFO message ~p~nState: ~p~n", [Msg, State]),
     {noreply, State}.
 
+
 terminate(normal, _State) ->
     ok.
 
@@ -143,7 +133,20 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-connect(ConnType, State, {dns, ClusterDns, ManagerPort}, none) ->
+establish_connection(State, ConnType, Destination, FailedEndpoint) ->
+    io:format("Establishing connection to ~p.~n", [Destination]),
+    case connect(State, ConnType, Destination, FailedEndpoint) of
+        {ok, NewState} ->
+            NewState#state.esq_pid ! {connected, NewState#state.cur_endpoint},
+            NewState2 = start_heartbeat(NewState),
+            {noreply, NewState2};
+        {error, Reason} ->
+            State#state.esq_pid ! {closed, Reason},
+            {stop, normal, State}
+    end.
+
+
+connect(State, ConnType, {dns, ClusterDns, ManagerPort}, none) ->
     io:format("Resolving DNS entry '~p', manager port ~p.~n", [ClusterDns, ManagerPort]),
     DnsTimeout = State#state.settings#conn_settings.dns_timeout,
     case inet:getaddrs(ClusterDns, inet, DnsTimeout) of
@@ -153,34 +156,34 @@ connect(ConnType, State, {dns, ClusterDns, ManagerPort}, none) ->
         {ok, Addrs} ->
             io:format("DNS entry '~p' resolved into ~p.~n", [ClusterDns, Addrs]),
             SeedNodes = [{Ip, ManagerPort} || Ip <- Addrs],
-            connect(ConnType, State, {cluster, SeedNodes}, none);
+            connect(State, ConnType, {cluster, SeedNodes}, none);
         {error, Reason} ->
             io:format("DNS lookup of '~p' failed, reason: ~p.~n", [ClusterDns, Reason]),
             {error, {dns_lookup_failed, Reason}}
     end;
 
-connect(ConnType, State, {cluster, SeedNodes}, none) ->
+connect(State, ConnType, {cluster, SeedNodes}, none) ->
     io:format("Connecting to cluster of nodes ~p.~n", [SeedNodes]),
     Nodes = [#node{state=manager,
                    tcp_ip=none,
                    tcp_port=none,
                    http_ip=Ip,
                    http_port=Port} || {Ip, Port} <- SeedNodes],
-    connect(ConnType, State, {gossip, Nodes}, none);
+    connect(State, ConnType, {gossip, Nodes}, none);
 
-connect(ConnType, State, {gossip, Nodes}, FailedEndpoint) ->
+connect(State, ConnType, {gossip, Nodes}, FailedEndpoint) ->
     io:format("Connecting to cluster of gossip nodes ~p.~n", [Nodes]),
     S = State#state.settings,
     Attempts = S#conn_settings.max_discover_retries + 1,
     case discover_best_endpoint(Attempts, S, Nodes, FailedEndpoint) of
         {ok, {Ip, Port}, Gossip} ->
             NewState = State#state{destination={gossip, Gossip}},
-            connect(ConnType, NewState, {node, Ip, Port}, none);
+            connect(NewState, ConnType, {node, Ip, Port}, none);
         {error, Reason} ->
             {error, Reason}
     end;
 
-connect(ConnType, State, {node, Ip, Port}, _FailedEndpoint) ->
+connect(State, ConnType, {node, Ip, Port}, _FailedEndpoint) ->
     S = State#state.settings,
     Attempts = S#conn_settings.max_conn_retries + 1,
     case connect_direct(ConnType, Attempts, S, Ip, Port) of
@@ -217,6 +220,26 @@ connect_direct(ConnType, AttemptsLeft, S, Ip, Port)
             io:format("Connection to [~p:~p] failed. Reason: ~p.~n", [Ip, Port, Reason]),
             connect_direct(reconnect, AttemptsLeft-1, S, Ip, Port)
     end.
+
+close_tcp(#state{socket=none}, _Reason) ->
+    ok;
+
+close_tcp(State, Reason) ->
+    io:format("Connection to ~p closed: ~p.~n", [State#state.cur_endpoint, Reason]),
+    ok = gen_tcp:close(State#state.socket),
+    State#state.esq_pid ! {disconnected, State#state.cur_endpoint, Reason}.
+
+start_heartbeat(State=#state{settings=S}) ->
+    Timeout = S#conn_settings.heartbeat_period,
+    TimerRef = erlang:start_timer(Timeout, self(), {heartbeat, State#state.msg_num}),
+    State#state{timer_ref=TimerRef}.
+
+send_heartbeat(State=#state{settings=S}) ->
+    Pkg = erles_pkg:create(heartbeat_req, erles_utils:gen_uuid(), noauth, <<>>),
+    send_pkg(State#state.socket, Pkg),
+    Timeout = S#conn_settings.heartbeat_timeout,
+    TimerRef = erlang:start_timer(Timeout, self(), {heartbeat_timeout, State#state.msg_num}),
+    State#state{timer_ref=TimerRef}.
 
 send_pkg(Socket, Pkg) ->
     Bin = erles_pkg:to_binary(Pkg),

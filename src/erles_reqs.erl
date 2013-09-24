@@ -99,7 +99,7 @@ pending({aborted, Reason}, State) ->
     abort(State, {error, {aborted, Reason}});
 
 pending({timeout, TimerRef, timeout}, State=#state{timer_ref=TimerRef}) ->
-    complete(State, {error, server_not_responded});
+    complete(State, {error, server_timeout});
 
 pending(Msg, State) ->
     io:format("Unexpected ASYNC EVENT ~p, state name ~p, state data ~p~n", [Msg, pending, State]),
@@ -129,7 +129,7 @@ retry_pending(Msg, From, State) ->
     {next_state, retry, State}.
 
 
-handle_info(TimerMsg={timer, _, _}, StateName, State) ->
+handle_info(TimerMsg={timeout, _, _}, StateName, State) ->
     gen_fsm:send_event(self(), TimerMsg),
     {next_state, StateName, State};
 
@@ -203,6 +203,7 @@ cancel_timer(TimerRef) -> erlang:cancel_timer(TimerRef).
 datatype_to_int(raw) -> 0;
 datatype_to_int(json) -> 1.
 
+response_cmd(ping) ->                        pong;
 response_cmd(write_events) ->                write_events_completed;
 response_cmd(transaction_start) ->           transaction_start_completed;
 response_cmd(transaction_write) ->           transaction_write_completed;
@@ -213,6 +214,9 @@ response_cmd(read_stream_events_forward) ->  read_stream_events_forward_complete
 response_cmd(read_stream_events_backward) -> read_stream_events_backward_completed;
 response_cmd(read_all_events_forward) ->     read_all_events_forward_completed;
 response_cmd(read_all_events_backward) ->    read_all_events_backward_completed.
+
+create_package(CorrId, Auth, ping, {}) ->
+    erles_pkg:create(ping, CorrId, Auth, <<>>);
 
 create_package(CorrId, Auth, write_events, {StreamId, ExpectedVersion, Events, RequireMaster}) ->
     Dto = #writeevents{
@@ -281,7 +285,7 @@ create_package(CorrId, Auth, read_event, {StreamId, EventNumber, ResolveLinks, R
         require_master = RequireMaster
     },
     Bin = erles_clientapi_pb:encode_readevent(Dto),
-    erles_pkg:create(read_event, CorrId, Auth, Bin);
+    erles_pkg:create(read_event, <<1:128>>, Auth, Bin);
 
 create_package(CorrId, Auth, read_stream_events_forward, {StreamId, FromEventNumber, MaxCount, ResolveLinks, RequireMaster}) ->
     Dto = #readstreamevents{
@@ -327,6 +331,8 @@ create_package(CorrId, Auth, read_all_events_backward, {{tfpos, CommitPos, Prepa
     Bin = erles_clientapi_pb:encode_readallevents(Dto),
     erles_pkg:create(read_all_events_backward, CorrId, Auth, Bin).
 
+deserialize_result(ping, pong, _Data) ->
+    {complete, ok};
 
 deserialize_result(write_events, write_events_completed, Data) ->
     Dto = erles_clientapi_pb:decode_writeeventscompleted(Data),
