@@ -1,4 +1,4 @@
--module(erlesque_fsm).
+-module(erles_fsm).
 -behavior(gen_fsm).
 
 -export([start_link/1, start_link/2]).
@@ -7,7 +7,7 @@
 -export([init/1, handle_sync_event/4, handle_event/3, handle_info/3, code_change/4, terminate/3]).
 -export([connecting/2, connecting/3, connected/2, connected/3]).
 
--include("erlesque_internal.hrl").
+-include("erles_internal.hrl").
 
 -define(CONNECTION_TIMEOUT, 2000).
 -define(RECONNECTION_DELAY, 500).
@@ -76,10 +76,10 @@ init({Destination, Options}) ->
         {_, {Login, Pass}} -> {Login, Pass};
         {_, noauth} -> noauth
     end,
-    {ok, SupPid} = erlesque_ops_sup:start_link(),
+    {ok, SupPid} = erles_ops_sup:start_link(),
     ConnSettings = get_connection_settings(Options),
-    {ok, ConnPid} = erlesque_conn:start_link(self(), Destination, ConnSettings),
-    erlesque_conn:connect(ConnPid),
+    {ok, ConnPid} = erles_conn:start_link(self(), Destination, ConnSettings),
+    erles_conn:connect(ConnPid),
     {ok, connecting, #state{sup_pid=SupPid,
                             conn_pid=ConnPid,
                             max_server_ops=MaxServerOps,
@@ -122,7 +122,7 @@ connected(Msg, State) ->
 
 
 handle_sync_event(close, _From, _StateName, State=#state{}) ->
-    ok = erlesque_conn:stop(State#state.conn_pid),
+    ok = erles_conn:stop(State#state.conn_pid),
     io:format("Connection stopped. Reason: ~p.~n", [closed_by_client]),
     {NewActOps, NewWaitOps} = abort_operations(State#state.active_ops,
                                                State#state.waiting_ops,
@@ -170,13 +170,13 @@ handle_info({package, Pkg}, StateName, State) ->
     {next_state, StateName, NewState};
 
 handle_info({connected, {_Ip, _Port}}, connecting, State=#state{}) ->
-    Restart = fun(_, #act_op{pid=Pid}, _) -> erlesque_ops:connected(Pid) end,
+    Restart = fun(_, #act_op{pid=Pid}, _) -> erles_ops:connected(Pid) end,
     dict:fold(Restart, ok, State#state.active_ops),
     NewState = start_waiting_operations(State),
     {next_state, connected, NewState};
 
 handle_info({disconnected, {_Ip, _Port}, _Reason}, connected, State=#state{active_ops=Ops}) ->
-    Pause = fun(_, #act_op{pid=Pid}, _) -> erlesque_ops:disconnected(Pid) end,
+    Pause = fun(_, #act_op{pid=Pid}, _) -> erles_ops:disconnected(Pid) end,
     dict:fold(Pause, ok, Ops),
     {next_state, connecting, State};
 
@@ -191,7 +191,7 @@ handle_info(Msg, StateName, State) ->
 
 
 terminate(normal, _StateName, _State) ->
-    io:format("Erlesque connection terminated!~n"),
+    io:format("erles connection terminated!~n"),
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -202,7 +202,7 @@ handle_pkg(State=#state{active_ops=Ops}, Pkg={pkg, _Cmd, CorrId, _Auth, _Data}) 
     %io:format("Package arrived: ~p~n", [Pkg]),
     case dict:find(CorrId, Ops) of
         {ok, #act_op{pid=Pid}} ->
-            erlesque_ops:handle_pkg(Pid, Pkg);
+            erles_ops:handle_pkg(Pid, Pkg);
         error ->
             io:format("No operation with corrid ~p, pkg ~p~nOps: ~p~n", [CorrId, Pkg, Ops]),
             ok
@@ -223,7 +223,7 @@ start_waiting_operations(State=#state{})
     end.
 
 start_operation(Op=#wait_op{}, State=#state{}) ->
-    CorrId = erlesque_utils:gen_uuid(),
+    CorrId = erles_utils:gen_uuid(),
     Auth = case Op#wait_op.auth of
         defauth -> State#state.default_auth;
         Other -> Other
@@ -236,12 +236,12 @@ start_operation(Op=#wait_op{}, State=#state{}) ->
                             op_retries=State#state.op_retries,
                             retry_delay=State#state.retry_delay,
                             auth=Auth},
-    {ok, Pid} = erlesque_ops_sup:start_operation(State#state.sup_pid,
+    {ok, Pid} = erles_ops_sup:start_operation(State#state.sup_pid,
                                                  Op#wait_op.op,
                                                  SysParams,
                                                  Op#wait_op.params),
     ActOp = #act_op{type=Op#wait_op.type, pid=Pid},
-    erlesque_ops:connected(Pid),
+    erles_ops:connected(Pid),
     ActiveOps = dict:store(CorrId, ActOp, State#state.active_ops),
     MaxServerOps = case Op#wait_op.type of
         temp -> State#state.max_server_ops - 1;
@@ -251,7 +251,7 @@ start_operation(Op=#wait_op{}, State=#state{}) ->
     State#state{active_ops=ActiveOps, max_server_ops=MaxServerOps}.
 
 abort_operations(ActiveOps, WaitingOps, Reason) ->
-    Abort = fun(_, #act_op{pid=Pid}, _) -> erlesque_ops:aborted(Pid, Reason) end,
+    Abort = fun(_, #act_op{pid=Pid}, _) -> erles_ops:aborted(Pid, Reason) end,
     ReplyAbort = fun(#wait_op{from=From}, _) -> gen_fsm:reply(From, {error, Reason}) end,
     dict:fold(Abort, ok, ActiveOps),
     lists:foldl(ReplyAbort, ok, queue:to_list(WaitingOps)),

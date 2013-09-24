@@ -1,10 +1,10 @@
--module(erlesque_conn).
+-module(erles_conn).
 -behavior(gen_server).
 
 -export([start_link/3, connect/1, reconnect/3, stop/1, send/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, code_change/3, terminate/2]).
 
--include("erlesque_internal.hrl").
+-include("erles_internal.hrl").
 
 -record(state, {esq_pid,
                 destination=unknown,
@@ -97,10 +97,10 @@ handle_cast(Msg, State) ->
 
 
 handle_info({tcp, Socket, Data}, State=#state{socket=Socket}) ->
-    Pkg = erlesque_pkg:from_binary(Data),
+    Pkg = erles_pkg:from_binary(Data),
     case Pkg of
         {pkg, heartbeat_req, CorrId, _Auth, PkgData} ->
-            send_pkg(Socket, erlesque_pkg:create(heartbeat_resp, CorrId, PkgData));
+            send_pkg(Socket, erles_pkg:create(heartbeat_resp, CorrId, PkgData));
         _Other ->
             io:format("Package received: ~p~n", [Pkg]),
             State#state.esq_pid ! {package, Pkg}
@@ -219,7 +219,7 @@ connect_direct(ConnType, AttemptsLeft, S, Ip, Port)
     end.
 
 send_pkg(Socket, Pkg) ->
-    Bin = erlesque_pkg:to_binary(Pkg),
+    Bin = erles_pkg:to_binary(Pkg),
     PkgLen = byte_size(Bin),
     gen_tcp:send(Socket, <<PkgLen:32/unsigned-little-integer>>),
     gen_tcp:send(Socket, Bin).
@@ -265,7 +265,7 @@ discover_best_endpoint(AttemptsLeft, S, SeedNodes, none) when AttemptsLeft > 0 -
 
 arrange_gossip_candidates(Candidates) when is_list(Candidates) ->
     {Managers, Nodes} = lists:partition(fun(N) -> N#node.state =:= manager end, Candidates),
-    All = erlesque_utils:shuffle(Nodes) ++ erlesque_utils:shuffle(Managers),
+    All = erles_utils:shuffle(Nodes) ++ erles_utils:shuffle(Managers),
     [{N#node.http_ip, N#node.http_port} || N <- All].
 
 get_gossip([], _Timeout) -> {error, no_more_seeds};
@@ -304,9 +304,9 @@ get_gossip(_Ip={I1, I2, I3, I4}, Port, Timeout) ->
 get_member(Member) ->
     State = node_state(proplists:get_value(<<"state">>, Member)),
     IsAlive = proplists:get_value(<<"isAlive">>, Member),
-    TcpIp = erlesque_utils:parse_ip(proplists:get_value(<<"externalTcpIp">>, Member)),
+    TcpIp = erles_utils:parse_ip(proplists:get_value(<<"externalTcpIp">>, Member)),
     TcpPort = proplists:get_value(<<"externalTcpPort">>, Member),
-    HttpIp = erlesque_utils:parse_ip(proplists:get_value(<<"externalHttpIp">>, Member)),
+    HttpIp = erles_utils:parse_ip(proplists:get_value(<<"externalHttpIp">>, Member)),
     HttpPort = proplists:get_value(<<"externalHttpPort">>, Member),
     {IsAlive, #node{state=State,
                     tcp_ip=TcpIp,

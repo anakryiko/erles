@@ -2,7 +2,7 @@
 
 -record(event_data,
         {
-            event_id = erlesque_utils:gen_uuid()              :: uuid(),
+            event_id = erles_utils:gen_uuid()              :: uuid(),
             event_type = erlang:error({required, event_type}) :: binary() | string(),
             data_type = raw                                   :: 'raw' | 'json',
             data = erlang:error({required, data})             :: binary(),

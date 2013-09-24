@@ -1,4 +1,4 @@
--module(erlesque_ops_sup).
+-module(erles_ops_sup).
 -behavior(supervisor).
 
 -export([start_link/0, start_operation/4]).
@@ -13,7 +13,7 @@ start_operation(SupPid, ReqCmd, SysParams, OpParams) ->
 
 init(nothing) ->
     {ok, {{simple_one_for_one, 3, 60},
-          [{erlesque_ops,
-            {erlesque_ops, start_link, []},
-            transient, infinity, worker, [erlesque_ops]}
+          [{erles_ops,
+            {erles_ops, start_link, []},
+            transient, infinity, worker, [erles_ops]}
           ]}}.

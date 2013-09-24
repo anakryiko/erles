@@ -1,6 +1,6 @@
--file("src/erlesque_clientapi_pb.erl", 1).
+-file("src/erles_clientapi_pb.erl", 1).
 
--module(erlesque_clientapi_pb).
+-module(erles_clientapi_pb).
 
 -export([encode_nothandled_masterinfo/1,
 	 decode_nothandled_masterinfo/1,

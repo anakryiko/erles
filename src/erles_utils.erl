@@ -1,11 +1,11 @@
--module(erlesque_utils).
+-module(erles_utils).
 -export([gen_uuid/0, uuid_to_string/1, uuid_to_string/2]).
 -export([parse_ip/1]).
 -export([shuffle/1]).
 -export([resolved_event/2]).
 
--include("erlesque_clientapi_pb.hrl").
--include("erlesque.hrl").
+-include("erles_clientapi_pb.hrl").
+-include("erles.hrl").
 
 %%% UUID routines were taken from
 %%% https://github.com/okeuday/uuid/blob/master/src/uuid.erl

@@ -1,6 +1,6 @@
--module(erlesque_req_tests).
+-module(erles_req_tests).
 -include_lib("eunit/include/eunit.hrl").
--include("erlesque.hrl").
+-include("erles.hrl").
 
 -compile(export_all).
 
@@ -44,69 +44,69 @@ reqs_test_() ->
 
 setup() ->
     %% here we assume that node on default IP and port is already started
-    {ok, C} = erlesque:connect(node, {{127,0,0,1}, 1113}),
+    {ok, C} = erles:connect(node, {{127,0,0,1}, 1113}),
     C.
 
 teardown(C) ->
-    ok = erlesque:close(C).
+    ok = erles:close(C).
 
 append_any(C) ->
     Stream = gen_stream_id(),
-    [?_assertEqual({ok, 0}, erlesque:append(C, Stream, any, [create_event()])),
-     ?_assertEqual({ok, 1}, erlesque:append(C, Stream, -2, [create_event()]))
+    [?_assertEqual({ok, 0}, erles:append(C, Stream, any, [create_event()])),
+     ?_assertEqual({ok, 1}, erles:append(C, Stream, -2, [create_event()]))
     ].
 
 append_expver(C) ->
     Stream = gen_stream_id(),
-    [?_assertEqual({ok, 0}, erlesque:append(C, Stream, -1, [create_event()])),
-     ?_assertEqual({ok, 1}, erlesque:append(C, Stream,  0, [create_event()])),
+    [?_assertEqual({ok, 0}, erles:append(C, Stream, -1, [create_event()])),
+     ?_assertEqual({ok, 1}, erles:append(C, Stream,  0, [create_event()])),
      ?_assertEqual({error, wrong_expected_version},
-                   erlesque:append(C, Stream, -1, [create_event()]))
+                   erles:append(C, Stream, -1, [create_event()]))
     ].
 
 append_empty(C) ->
     Stream = gen_stream_id(),
-    [?_assertEqual({ok, -1}, erlesque:append(C, Stream, any, [])),
-     ?_assertEqual({ok, -1}, erlesque:append(C, Stream, -1, []))
+    [?_assertEqual({ok, -1}, erles:append(C, Stream, any, [])),
+     ?_assertEqual({ok, -1}, erles:append(C, Stream, -1, []))
     ].
 
 
 delete_any(C) ->
     Stream = gen_stream_id(),
-    {ok, _} = erlesque:append(C, Stream, any, [create_event(), create_event()]),
-    [?_assertEqual(ok, erlesque:delete(C, Stream, any)),
-     ?_assertEqual({error, stream_deleted}, erlesque:read_event(C, Stream, last))
+    {ok, _} = erles:append(C, Stream, any, [create_event(), create_event()]),
+    [?_assertEqual(ok, erles:delete(C, Stream, any)),
+     ?_assertEqual({error, stream_deleted}, erles:read_event(C, Stream, last))
     ].
 
 delete_expver(C) ->
     Stream = gen_stream_id(),
-    {ok, NextExpVer} = erlesque:append(C, Stream, any, [create_event(), create_event()]),
-    [?_assertEqual(ok, erlesque:delete(C, Stream, NextExpVer)),
-     ?_assertEqual({error, stream_deleted}, erlesque:read_event(C, Stream, last))
+    {ok, NextExpVer} = erles:append(C, Stream, any, [create_event(), create_event()]),
+    [?_assertEqual(ok, erles:delete(C, Stream, NextExpVer)),
+     ?_assertEqual({error, stream_deleted}, erles:read_event(C, Stream, last))
     ].
 
 transaction_expver(C) ->
     Stream = gen_stream_id(),
-    {ok, Tid} = erlesque:transaction_start(C, Stream, -1),
-    [?_assertEqual(ok, erlesque:transaction_write(C, Tid, [create_event(), create_event()])),
-     ?_assertEqual(ok, erlesque:transaction_write(C, Tid, [create_event()])),
-     ?_assertEqual(ok, erlesque:transaction_write(C, Tid, [])),
-     ?_assertEqual({ok, 2}, erlesque:transaction_commit(C, Tid))
+    {ok, Tid} = erles:transaction_start(C, Stream, -1),
+    [?_assertEqual(ok, erles:transaction_write(C, Tid, [create_event(), create_event()])),
+     ?_assertEqual(ok, erles:transaction_write(C, Tid, [create_event()])),
+     ?_assertEqual(ok, erles:transaction_write(C, Tid, [])),
+     ?_assertEqual({ok, 2}, erles:transaction_commit(C, Tid))
     ].
 
 transaction_any(C) ->
     Stream = gen_stream_id(),
-    {ok, Tid} = erlesque:transaction_start(C, Stream, any),
-    [?_assertEqual(ok, erlesque:transaction_write(C, Tid, [create_event(), create_event()])),
-     ?_assertEqual(ok, erlesque:transaction_write(C, Tid, [create_event()])),
-     ?_assertEqual(ok, erlesque:transaction_write(C, Tid, [])),
-     ?_assertEqual({ok, 2}, erlesque:transaction_commit(C, Tid))
+    {ok, Tid} = erles:transaction_start(C, Stream, any),
+    [?_assertEqual(ok, erles:transaction_write(C, Tid, [create_event(), create_event()])),
+     ?_assertEqual(ok, erles:transaction_write(C, Tid, [create_event()])),
+     ?_assertEqual(ok, erles:transaction_write(C, Tid, [])),
+     ?_assertEqual({ok, 2}, erles:transaction_commit(C, Tid))
     ].
 
 transaction_empty(C) ->
     Stream = gen_stream_id(),
-    {ok, Tid} = erlesque:transaction_start(C, Stream, any),
-    ?_assertEqual({ok, -1}, erlesque:transaction_commit(C, Tid)).
+    {ok, Tid} = erles:transaction_start(C, Stream, any),
+    ?_assertEqual({ok, -1}, erles:transaction_commit(C, Tid)).
 
 reads(C) ->
     S = gen_stream_id(),
@@ -116,34 +116,34 @@ reads(C) ->
     RE1 = map_event(S, 0, E1),
     RE2 = map_event(S, 1, E2),
     RE3 = map_event(S, 2, E3),
-    {ok, 2} = erlesque:append(C, S, -1, [E1, E2, E3]),
+    {ok, 2} = erles:append(C, S, -1, [E1, E2, E3]),
     {inparallel, [
-     ?_assertEqual({ok, RE1}, erlesque:read_event(C, S, 0)),
-     ?_assertEqual({ok, RE2}, erlesque:read_event(C, S, 1)),
-     ?_assertEqual({ok, RE3}, erlesque:read_event(C, S, 2)),
-     ?_assertEqual({ok, RE3}, erlesque:read_event(C, S, last)),
-     ?_assertEqual({ok, RE3}, erlesque:read_event(C, S, -1)),
+     ?_assertEqual({ok, RE1}, erles:read_event(C, S, 0)),
+     ?_assertEqual({ok, RE2}, erles:read_event(C, S, 1)),
+     ?_assertEqual({ok, RE3}, erles:read_event(C, S, 2)),
+     ?_assertEqual({ok, RE3}, erles:read_event(C, S, last)),
+     ?_assertEqual({ok, RE3}, erles:read_event(C, S, -1)),
 
-     ?_assertEqual({ok, [RE1], 1, false},           erlesque:read_stream(C, S, 0, 1)),
-     ?_assertEqual({ok, [RE2], 2, false},           erlesque:read_stream(C, S, 1, 1)),
-     ?_assertEqual({ok, [RE3], 3, true},            erlesque:read_stream(C, S, 2, 1)),
-     ?_assertEqual({ok, [], 3, true},               erlesque:read_stream(C, S, 3, 1)),
-     ?_assertEqual({ok, [RE1, RE2], 2, false},      erlesque:read_stream(C, S, 0, 2)),
-     ?_assertEqual({ok, [RE2, RE3], 3, true},       erlesque:read_stream(C, S, 1, 2)),
-     ?_assertEqual({ok, [RE3], 3, true},            erlesque:read_stream(C, S, 2, 2)),
-     ?_assertEqual({ok, [], 3, true},               erlesque:read_stream(C, S, 3, 2)),
+     ?_assertEqual({ok, [RE1], 1, false},           erles:read_stream(C, S, 0, 1)),
+     ?_assertEqual({ok, [RE2], 2, false},           erles:read_stream(C, S, 1, 1)),
+     ?_assertEqual({ok, [RE3], 3, true},            erles:read_stream(C, S, 2, 1)),
+     ?_assertEqual({ok, [], 3, true},               erles:read_stream(C, S, 3, 1)),
+     ?_assertEqual({ok, [RE1, RE2], 2, false},      erles:read_stream(C, S, 0, 2)),
+     ?_assertEqual({ok, [RE2, RE3], 3, true},       erles:read_stream(C, S, 1, 2)),
+     ?_assertEqual({ok, [RE3], 3, true},            erles:read_stream(C, S, 2, 2)),
+     ?_assertEqual({ok, [], 3, true},               erles:read_stream(C, S, 3, 2)),
 
-     ?_assertEqual({ok, [RE1], -1, true},           erlesque:read_stream(C, S, 0, 1, backward)),
-     ?_assertEqual({ok, [RE2], 0, false},           erlesque:read_stream(C, S, 1, 1, backward)),
-     ?_assertEqual({ok, [RE3], 1, false},           erlesque:read_stream(C, S, 2, 1, backward)),
-     ?_assertEqual({ok, [], 2, false},              erlesque:read_stream(C, S, 3, 1, backward)),
-     ?_assertEqual({ok, [RE1], -1, true},           erlesque:read_stream(C, S, 0, 2, backward)),
-     ?_assertEqual({ok, [RE2, RE1], -1, true},      erlesque:read_stream(C, S, 1, 2, backward)),
-     ?_assertEqual({ok, [RE3, RE2], 0, false},      erlesque:read_stream(C, S, 2, 2, backward)),
-     ?_assertEqual({ok, [RE3], 1, false},           erlesque:read_stream(C, S, 3, 2, backward)),
-     ?_assertEqual({ok, [RE3, RE2, RE1], -1, true}, erlesque:read_stream(C, S, 5, 100, backward)),
-     ?_assertEqual({ok, [RE3, RE2], 0, false},      erlesque:read_stream(C, S, last, 2, backward)),
-     ?_assertEqual({ok, [RE3, RE2], 0, false},      erlesque:read_stream(C, S, -1, 2, backward)),
+     ?_assertEqual({ok, [RE1], -1, true},           erles:read_stream(C, S, 0, 1, backward)),
+     ?_assertEqual({ok, [RE2], 0, false},           erles:read_stream(C, S, 1, 1, backward)),
+     ?_assertEqual({ok, [RE3], 1, false},           erles:read_stream(C, S, 2, 1, backward)),
+     ?_assertEqual({ok, [], 2, false},              erles:read_stream(C, S, 3, 1, backward)),
+     ?_assertEqual({ok, [RE1], -1, true},           erles:read_stream(C, S, 0, 2, backward)),
+     ?_assertEqual({ok, [RE2, RE1], -1, true},      erles:read_stream(C, S, 1, 2, backward)),
+     ?_assertEqual({ok, [RE3, RE2], 0, false},      erles:read_stream(C, S, 2, 2, backward)),
+     ?_assertEqual({ok, [RE3], 1, false},           erles:read_stream(C, S, 3, 2, backward)),
+     ?_assertEqual({ok, [RE3, RE2, RE1], -1, true}, erles:read_stream(C, S, 5, 100, backward)),
+     ?_assertEqual({ok, [RE3, RE2], 0, false},      erles:read_stream(C, S, last, 2, backward)),
+     ?_assertEqual({ok, [RE3, RE2], 0, false},      erles:read_stream(C, S, -1, 2, backward)),
 
      {timeout, 100, ?_assertEqual([RE1, RE2, RE3], read_all_and_filter(C, S, first, forward))},
      {timeout, 100, ?_assertEqual([RE3, RE2, RE1], read_all_and_filter(C, S, last, backward))}
@@ -155,7 +155,7 @@ read_all_and_filter(C, S, From, Dir) ->
 
 read_all_and_filter(C, S, Pos, Dir, Acc) ->
     Opts = [{auth, {<<"admin">>, <<"changeit">>}}],
-    {ok, Events, NextPos, EndOfStream} = erlesque:read_stream(C, all, Pos, 100, Dir, Opts),
+    {ok, Events, NextPos, EndOfStream} = erles:read_stream(C, all, Pos, 100, Dir, Opts),
     NewAcc = lists:foldl(fun({event, E, _P}, A) ->
         case E#event.stream_id =:= S of
             true -> [{event, E, E#event.event_number} | A];
@@ -183,11 +183,11 @@ subscriptions(C) ->
     RE5 = map_event(S2, 1, E5),
     {SubscriptionPid1, ListenerPid1} = create_subscriber(C, S1, 3),
     {SubscriptionPid2, ListenerPid2} = create_subscriber(C, S2, 2),
-    {ok, 0} = erlesque:append(C, S1, -1, [E1]),
-    {ok, 0} = erlesque:append(C, S2, -1, [E4]),
-    {ok, 1} = erlesque:append(C, S1, 0, [E2]),
-    {ok, 1} = erlesque:append(C, S2, 0, [E5]),
-    {ok, 2} = erlesque:append(C, S1, 1, [E3]),
+    {ok, 0} = erles:append(C, S1, -1, [E1]),
+    {ok, 0} = erles:append(C, S2, -1, [E4]),
+    {ok, 1} = erles:append(C, S1, 0, [E2]),
+    {ok, 1} = erles:append(C, S2, 0, [E5]),
+    {ok, 2} = erles:append(C, S1, 1, [E3]),
     SubRes1 = receive
                   {subscriber_done, ListenerPid1, Res1} -> Res1
                   after 5000 -> subscriber1_timeout
@@ -199,14 +199,14 @@ subscriptions(C) ->
     {inparallel, [
      ?_assertEqual([RE1, RE2, RE3], SubRes1),
      ?_assertEqual([RE4, RE5], SubRes2),
-     ?_assertEqual(ok, erlesque:unsubscribe(SubscriptionPid1)),
-     ?_assertEqual(ok, erlesque:unsubscribe(SubscriptionPid2))
+     ?_assertEqual(ok, erles:unsubscribe(SubscriptionPid1)),
+     ?_assertEqual(ok, erles:unsubscribe(SubscriptionPid2))
     ]}.
 
 create_subscriber(C, StreamId, EventCount) ->
     SelfPid = self(),
     SubscriberPid = spawn_link(fun() -> subscriber(EventCount, SelfPid, []) end),
-    {ok, SubscriptionPid, _SubPos} = erlesque:subscribe(C, StreamId, [{subscriber, SubscriberPid}]),
+    {ok, SubscriptionPid, _SubPos} = erles:subscribe(C, StreamId, [{subscriber, SubscriberPid}]),
     {SubscriptionPid, SubscriberPid}.
 
 subscriber(0, RespPid, Acc) ->
@@ -220,71 +220,71 @@ subscriber(EventsToGo, RespPid, Acc) ->
 
 metadata_raw_get_set_works(C) ->
     S = gen_stream_id(),
-    Bin = erlesque_utils:gen_uuid(),
-    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, Bin)),
-     ?_assertEqual({ok, {meta, Bin, 0}}, erlesque:get_metadata(C, S, raw)),
-     ?_assertMatch({ok, {event, #event{data=Bin}, 0}}, erlesque:read_event(C, <<"$$", S/binary>>, last))
+    Bin = erles_utils:gen_uuid(),
+    [?_assertEqual({ok, 0}, erles:set_metadata(C, S, any, Bin)),
+     ?_assertEqual({ok, {meta, Bin, 0}}, erles:get_metadata(C, S, raw)),
+     ?_assertMatch({ok, {event, #event{data=Bin}, 0}}, erles:read_event(C, <<"$$", S/binary>>, last))
     ].
 
 metadata_raw_get_unexisting(C) ->
     S = gen_stream_id(),
-    ?_assertEqual({ok, {meta, <<>>, -1}}, erlesque:get_metadata(C, S, raw)).
+    ?_assertEqual({ok, {meta, <<>>, -1}}, erles:get_metadata(C, S, raw)).
 
 metadata_raw_setting_empty_works(C) ->
     S = gen_stream_id(),
-    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, <<>>)),
-     ?_assertEqual({ok, {meta, <<>>, 0}}, erlesque:get_metadata(C, S, raw))
+    [?_assertEqual({ok, 0}, erles:set_metadata(C, S, any, <<>>)),
+     ?_assertEqual({ok, {meta, <<>>, 0}}, erles:get_metadata(C, S, raw))
     ].
 
 metadata_raw_setting_with_wrong_expver_fails(C) ->
     S = gen_stream_id(),
-    [?_assertEqual({error, wrong_expected_version}, erlesque:set_metadata(C, S, 1, <<>>)),
-     ?_assertEqual({ok, {meta, <<>>, -1}}, erlesque:get_metadata(C, S, raw))
+    [?_assertEqual({error, wrong_expected_version}, erles:set_metadata(C, S, 1, <<>>)),
+     ?_assertEqual({ok, {meta, <<>>, -1}}, erles:get_metadata(C, S, raw))
     ].
 
 metadata_raw_setting_for_deleted_stream_fails(C) ->
     S = gen_stream_id(),
-    [?_assertEqual(ok, erlesque:delete(C, S, any)),
-     ?_assertEqual({error, stream_deleted}, erlesque:set_metadata(C, S, any, <<>>))
+    [?_assertEqual(ok, erles:delete(C, S, any)),
+     ?_assertEqual({error, stream_deleted}, erles:set_metadata(C, S, any, <<>>))
     ].
 
 metadata_raw_getting_for_deleted_stream_fails(C) ->
     S = gen_stream_id(),
-    [?_assertEqual(ok, erlesque:delete(C, S, any)),
-     ?_assertEqual({error, stream_deleted}, erlesque:get_metadata(C, S, raw))
+    [?_assertEqual(ok, erles:delete(C, S, any)),
+     ?_assertEqual({error, stream_deleted}, erles:get_metadata(C, S, raw))
     ].
 
 metadata_raw_returns_last_meta(C) ->
     S = gen_stream_id(),
-    Bin1 = erlesque_utils:gen_uuid(),
-    Bin2 = erlesque_utils:gen_uuid(),
-    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, Bin1)),
-     ?_assertEqual({ok, 1}, erlesque:set_metadata(C, S, 0, Bin2)),
-     ?_assertEqual({ok, {meta, Bin2, 1}}, erlesque:get_metadata(C, S, raw))
+    Bin1 = erles_utils:gen_uuid(),
+    Bin2 = erles_utils:gen_uuid(),
+    [?_assertEqual({ok, 0}, erles:set_metadata(C, S, any, Bin1)),
+     ?_assertEqual({ok, 1}, erles:set_metadata(C, S, 0, Bin2)),
+     ?_assertEqual({ok, {meta, Bin2, 1}}, erles:get_metadata(C, S, raw))
     ].
 
 
 metadata_struct_set_get_empty_works(C) ->
     S = gen_stream_id(),
-    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, #stream_meta{})),
-     ?_assertEqual({ok, {meta, <<"{}">>, 0}}, erlesque:get_metadata(C, S, raw)),
-     ?_assertEqual({ok, {meta, #stream_meta{}, 0}}, erlesque:get_metadata(C, S, struct))
+    [?_assertEqual({ok, 0}, erles:set_metadata(C, S, any, #stream_meta{})),
+     ?_assertEqual({ok, {meta, <<"{}">>, 0}}, erles:get_metadata(C, S, raw)),
+     ?_assertEqual({ok, {meta, #stream_meta{}, 0}}, erles:get_metadata(C, S, struct))
     ].
 
 metadata_struct_get_unexisting_returns_empty(C) ->
     S = gen_stream_id(),
-    ?_assertEqual({ok, {meta, #stream_meta{}, -1}}, erlesque:get_metadata(C, S, struct)).
+    ?_assertEqual({ok, {meta, #stream_meta{}, -1}}, erles:get_metadata(C, S, struct)).
 
 metadata_struct_get_nonjson_fails(C) ->
     S = gen_stream_id(),
-    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, <<"}abracadabra{">>)),
-     ?_assertEqual({error, bad_json}, erlesque:get_metadata(C, S, struct))
+    [?_assertEqual({ok, 0}, erles:set_metadata(C, S, any, <<"}abracadabra{">>)),
+     ?_assertEqual({error, bad_json}, erles:get_metadata(C, S, struct))
     ].
 
 metadata_struct_get_incomplete_json_fails(C) ->
     S = gen_stream_id(),
-    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, <<"{">>)),
-     ?_assertEqual({error, bad_json}, erlesque:get_metadata(C, S, struct))
+    [?_assertEqual({ok, 0}, erles:set_metadata(C, S, any, <<"{">>)),
+     ?_assertEqual({error, bad_json}, erles:get_metadata(C, S, struct))
     ].
 
 metadata_struct_set_raw_read_struct(C) ->
@@ -292,16 +292,16 @@ metadata_struct_set_raw_read_struct(C) ->
     MetaBin = struct_meta_as_binary(),
     MetaStruct = struct_meta_expected(),
     Opts = [{auth, {<<"admin">>, <<"changeit">>}}],
-    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, MetaBin, Opts)),
-     ?_assertEqual({ok, {meta, MetaStruct, 0}}, erlesque:get_metadata(C, S, struct, Opts))
+    [?_assertEqual({ok, 0}, erles:set_metadata(C, S, any, MetaBin, Opts)),
+     ?_assertEqual({ok, {meta, MetaStruct, 0}}, erles:get_metadata(C, S, struct, Opts))
     ].
 
 metadata_struct_set_struct_read_struct(C) ->
     S = gen_stream_id(),
     MetaStruct = struct_meta_expected(),
     Opts = [{auth, {<<"admin">>, <<"changeit">>}}],
-    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, MetaStruct, Opts)),
-     ?_assertEqual({ok, {meta, MetaStruct, 0}}, erlesque:get_metadata(C, S, struct, Opts))
+    [?_assertEqual({ok, 0}, erles:set_metadata(C, S, any, MetaStruct, Opts)),
+     ?_assertEqual({ok, {meta, MetaStruct, 0}}, erles:get_metadata(C, S, struct, Opts))
     ].
 
 metadata_struct_set_struct_read_raw(C) ->
@@ -309,17 +309,17 @@ metadata_struct_set_struct_read_raw(C) ->
     MetaStruct = struct_meta_expected(),
     MetaBin = struct_meta_canon_binary(),
     Opts = [{auth, {<<"admin">>, <<"changeit">>}}],
-    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, MetaStruct, Opts)),
-     ?_assertEqual({ok, {meta, MetaBin, 0}}, erlesque:get_metadata(C, S, raw, Opts))
+    [?_assertEqual({ok, 0}, erles:set_metadata(C, S, any, MetaStruct, Opts)),
+     ?_assertEqual({ok, {meta, MetaBin, 0}}, erles:get_metadata(C, S, raw, Opts))
     ].
 
 metadata_struct_set_empty_acl_works(C) ->
     S = gen_stream_id(),
     MetaStruct = #stream_meta{acl=#stream_acl{}},
     MetaBin = <<"{\"$acl\":{}}">>,
-    [?_assertEqual({ok, 0}, erlesque:set_metadata(C, S, any, MetaStruct)),
-     ?_assertEqual({ok, {meta, MetaStruct, 0}}, erlesque:get_metadata(C, S, struct)),
-     ?_assertEqual({ok, {meta, MetaBin, 0}}, erlesque:get_metadata(C, S, raw))
+    [?_assertEqual({ok, 0}, erles:set_metadata(C, S, any, MetaStruct)),
+     ?_assertEqual({ok, {meta, MetaStruct, 0}}, erles:get_metadata(C, S, struct)),
+     ?_assertEqual({ok, {meta, MetaBin, 0}}, erles:get_metadata(C, S, raw))
     ].
 
 struct_meta_as_binary() ->
@@ -408,5 +408,5 @@ map_event(StreamId, EventNumber, EventData) ->
      EventNumber}.
 
 gen_stream_id() ->
-    UuidStr = erlesque_utils:uuid_to_string(erlesque_utils:gen_uuid()),
+    UuidStr = erles_utils:uuid_to_string(erles_utils:gen_uuid()),
     iolist_to_binary(io_lib:format("esq-test-~s", [UuidStr])).

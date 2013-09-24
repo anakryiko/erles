@@ -1,4 +1,4 @@
--module(erlesque).
+-module(erles).
 -export([connect/2, connect/3, close/1]).
 -export([ping/1]).
 
@@ -17,8 +17,8 @@
 -export([set_metadata/4, set_metadata/5]).
 -export([get_metadata/2, get_metadata/3, get_metadata/4]).
 
--include("erlesque.hrl").
--include("erlesque_internal.hrl").
+-include("erles.hrl").
+-include("erles_internal.hrl").
 
 
 -define(EXPVER_ANY, -2).
@@ -52,33 +52,33 @@
 %%% CONNECT
 connect(node, {Ip={_I1, _I2, _I3, _I4}, Port})
         when is_integer(Port), Port > 0, Port < 65536 ->
-    erlesque_fsm:start_link({node, Ip, Port});
+    erles_fsm:start_link({node, Ip, Port});
 
 connect(dns, {ClusterDns, ManagerPort})
         when is_list(ClusterDns),
              is_integer(ManagerPort), ManagerPort > 0, ManagerPort < 65536 ->
-    erlesque_fsm:start_link({dns, ClusterDns, ManagerPort});
+    erles_fsm:start_link({dns, ClusterDns, ManagerPort});
 
 connect(cluster, SeedNodes)
         when is_list(SeedNodes) ->
-    erlesque_fsm:start_link({cluster, SeedNodes}).
+    erles_fsm:start_link({cluster, SeedNodes}).
 
 
 connect(node, {Ip={_I1, _I2, _I3, _I4}, Port}, Options)
         when is_integer(Port), Port > 0, Port < 65536,
              is_list(Options) ->
-    erlesque_fsm:start_link({node, Ip, Port}, Options);
+    erles_fsm:start_link({node, Ip, Port}, Options);
 
 connect(dns, {ClusterDns, ManagerPort}, Options)
         when is_list(ClusterDns),
              is_integer(ManagerPort), ManagerPort > 0, ManagerPort < 65536,
              is_list(Options) ->
-    erlesque_fsm:start_link({dns, ClusterDns, ManagerPort}, Options);
+    erles_fsm:start_link({dns, ClusterDns, ManagerPort}, Options);
 
 connect(cluster, SeedNodes, Options)
         when is_list(SeedNodes),
              is_list(Options) ->
-    erlesque_fsm:start_link({cluster, SeedNodes}, Options).
+    erles_fsm:start_link({cluster, SeedNodes}, Options).
 
 %%% CLOSE
 close(Pid) ->
@@ -293,10 +293,10 @@ subscribe_perm(Pid, StreamId, From, Options) ->
     ResolveLinks = proplists:get_value(resolve, Options, ?DEF_RESOLVE),
     SubscriberPid = proplists:get_value(subscriber, Options, self()),
     MaxCount = proplists:get_value(max_count, Options, 100),
-    erlesque_perm_sub:start_link(Pid, StreamId, From, SubscriberPid, Auth, ResolveLinks, MaxCount).
+    erles_perm_sub:start_link(Pid, StreamId, From, SubscriberPid, Auth, ResolveLinks, MaxCount).
 
 unsubscribe_perm(SubscrPid) ->
-    erlesque_perm_sub:stop(SubscrPid).
+    erles_perm_sub:stop(SubscrPid).
 
 
 %%% SET STREAM METADATA

@@ -1,4 +1,4 @@
--module(erlesque_subs).
+-module(erles_subs).
 
 -export([init/1, handle_sync_event/4, handle_event/3, handle_info/3, code_change/4, terminate/3]).
 -export([disconnected/2, disconnected/3,
@@ -6,9 +6,9 @@
          retry_pending/2, retry_pending/3,
          subscribed/2, subscribed/3]).
 
--include("erlesque_clientapi_pb.hrl").
--include("erlesque.hrl").
--include("erlesque_internal.hrl").
+-include("erles_clientapi_pb.hrl").
+-include("erles.hrl").
+-include("erles_internal.hrl").
 
 -record(state, {corr_id,
                 esq_pid,
@@ -81,7 +81,7 @@ disconnected(Msg, From, State) ->
 pending({pkg, Cmd, CorrId, _Auth, Data}, State=#state{corr_id=CorrId}) ->
     case Cmd of
         subscription_confirmation ->
-            Dto = erlesque_clientapi_pb:decode_subscriptionconfirmation(Data),
+            Dto = erles_clientapi_pb:decode_subscriptionconfirmation(Data),
             SubPos = case State#state.sub_kind of
                 all    -> Dto#subscriptionconfirmation.last_commit_position;
                 stream -> Dto#subscriptionconfirmation.last_event_number
@@ -90,7 +90,7 @@ pending({pkg, Cmd, CorrId, _Auth, Data}, State=#state{corr_id=CorrId}) ->
             NewState = succeed(State),
             {next_state, subscribed, NewState};
         subscription_dropped ->
-            Dto = erlesque_clientapi_pb:decode_subscriptiondropped(Data),
+            Dto = erles_clientapi_pb:decode_subscriptiondropped(Data),
             Reason = drop_reason(Dto#subscriptiondropped.reason),
             complete(State, {error, Reason});
         not_handled ->
@@ -157,12 +157,12 @@ retry_pending(Msg, From, State) ->
 subscribed({pkg, Cmd, CorrId, _Auth, Data}, State=#state{corr_id=CorrId}) ->
     case Cmd of
         stream_event_appeared ->
-            Dto = erlesque_clientapi_pb:decode_streameventappeared(Data),
-            EventRes = erlesque_utils:resolved_event(State#state.sub_kind, Dto#streameventappeared.event),
+            Dto = erles_clientapi_pb:decode_streameventappeared(Data),
+            EventRes = erles_utils:resolved_event(State#state.sub_kind, Dto#streameventappeared.event),
             notify(State, EventRes),
             {next_state, subscribed, State};
         subscription_dropped ->
-            Dto = erlesque_clientapi_pb:decode_subscriptiondropped(Data),
+            Dto = erles_clientapi_pb:decode_subscriptiondropped(Data),
             Reason = Dto#subscriptiondropped.reason,
             notify(State, {unsubscribed, Reason}),
             complete(State);
@@ -222,28 +222,28 @@ issue_subscribe_request(State=#state{}) ->
         event_stream_id = State#state.stream_id,
         resolve_link_tos = State#state.resolve_links
     },
-    Bin = erlesque_clientapi_pb:encode_subscribetostream(Dto),
-    Pkg = erlesque_pkg:create(subscribe_to_stream, State#state.corr_id, State#state.auth, Bin),
-    erlesque_conn:send(State#state.conn_pid, Pkg),
+    Bin = erles_clientapi_pb:encode_subscribetostream(Dto),
+    Pkg = erles_pkg:create(subscribe_to_stream, State#state.corr_id, State#state.auth, Bin),
+    erles_conn:send(State#state.conn_pid, Pkg),
     TimerRef = erlang:start_timer(State#state.timeout, self(), timeout),
     {next_state, pending, State#state{timer_ref=TimerRef}}.
 
 issue_unsubscribe_request(State) ->
     Dto = #unsubscribefromstream{},
-    Bin = erlesque_clientapi_pb:encode_unsubscribefromstream(Dto),
-    Pkg = erlesque_pkg:create(unsubscribe_from_stream, State#state.corr_id, State#state.auth, Bin),
-    erlesque_conn:send(State#state.conn_pid, Pkg).
+    Bin = erles_clientapi_pb:encode_unsubscribefromstream(Dto),
+    Pkg = erles_pkg:create(unsubscribe_from_stream, State#state.corr_id, State#state.auth, Bin),
+    erles_conn:send(State#state.conn_pid, Pkg).
 
 complete(State, Result) ->
     cancel_timer(State#state.timer_ref),
     gen_fsm:reply(State#state.reply_pid, Result),
-    erlesque_fsm:operation_completed(State#state.esq_pid, State#state.corr_id),
+    erles_fsm:operation_completed(State#state.esq_pid, State#state.corr_id),
     erlang:demonitor(State#state.sub_mon_ref, [flush]),
     {stop, normal, State}.
 
 complete(State) ->
     cancel_timer(State#state.timer_ref),
-    erlesque_fsm:operation_completed(State#state.esq_pid, State#state.corr_id),
+    erles_fsm:operation_completed(State#state.esq_pid, State#state.corr_id),
     erlang:demonitor(State#state.sub_mon_ref, [flush]),
     {stop, normal, State}.
 
@@ -260,14 +260,14 @@ notify(State, Msg) ->
     State#state.sub_pid ! Msg.
 
 not_handled(Data, State) ->
-    Dto = erlesque_clientapi_pb:decode_nothandled(Data),
+    Dto = erles_clientapi_pb:decode_nothandled(Data),
     case Dto#nothandled.reason of
         'NotMaster' ->
-            MasterInfo = erlesque_clientapi_pb:decode_nothandled_masterinfo(Dto#nothandled.additional_info),
-            Ip = erlesque_utils:parse_ip(MasterInfo#nothandled_masterinfo.external_tcp_address),
+            MasterInfo = erles_clientapi_pb:decode_nothandled_masterinfo(Dto#nothandled.additional_info),
+            Ip = erles_utils:parse_ip(MasterInfo#nothandled_masterinfo.external_tcp_address),
             Port = MasterInfo#nothandled_masterinfo.external_tcp_port,
             cancel_timer(State#state.timer_ref),
-            case erlesque_conn:reconnect(State#state.conn_pid, Ip, Port) of
+            case erles_conn:reconnect(State#state.conn_pid, Ip, Port) of
                 already_connected ->
                     issue_subscribe_request(State);
                 ok ->
@@ -280,8 +280,8 @@ not_handled(Data, State) ->
 retry(Reason, State=#state{retries=Retries}) when Retries > 0 ->
     io:format("Retrying subscription because ~p.~n", [Reason]),
     cancel_timer(State#state.timer_ref),
-    NewCorrId = erlesque_utils:gen_uuid(),
-    erlesque_fsm:operation_restarted(State#state.esq_pid, State#state.corr_id, NewCorrId),
+    NewCorrId = erles_utils:gen_uuid(),
+    erles_fsm:operation_restarted(State#state.esq_pid, State#state.corr_id, NewCorrId),
     TimerRef = erlang:start_timer(State#state.retry_delay, self(), retry),
     {next_state, retry_pending, State#state{corr_id=NewCorrId, retries=Retries-1, timer_ref=TimerRef}};
 

@@ -1,4 +1,4 @@
--module(erlesque_pkg).
+-module(erles_pkg).
 -export([create/3, create/4, from_binary/1, to_binary/1]).
 
 create(Cmd, CorrId, Data) ->

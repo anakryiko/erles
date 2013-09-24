@@ -1,13 +1,13 @@
--module(erlesque_reqs).
+-module(erles_reqs).
 
 -export([init/1, handle_sync_event/4, handle_event/3, handle_info/3, code_change/4, terminate/3]).
 -export([disconnected/2, disconnected/3,
          pending/2, pending/3,
          retry_pending/2, retry_pending/3]).
 
--include("erlesque_clientapi_pb.hrl").
--include("erlesque.hrl").
--include("erlesque_internal.hrl").
+-include("erles_clientapi_pb.hrl").
+-include("erles.hrl").
+-include("erles_internal.hrl").
 
 -record(state, {req_cmd,
                 corr_id,
@@ -152,12 +152,12 @@ issue_request(State) ->
 
 send_request(S=#state{}) ->
     Pkg = create_package(S#state.corr_id, S#state.auth, S#state.req_cmd, S#state.op_params),
-    erlesque_conn:send(S#state.conn_pid, Pkg).
+    erles_conn:send(S#state.conn_pid, Pkg).
 
 complete(State=#state{}, Result) ->
     cancel_timer(State#state.timer_ref),
     gen_fsm:reply(State#state.reply_pid, Result),
-    erlesque_fsm:operation_completed(State#state.esq_pid, State#state.corr_id),
+    erles_fsm:operation_completed(State#state.esq_pid, State#state.corr_id),
     {stop, normal, State}.
 
 abort(State=#state{}, Result) ->
@@ -166,14 +166,14 @@ abort(State=#state{}, Result) ->
     {stop, normal, State}.
 
 not_handled(Data, State) ->
-    Dto = erlesque_clientapi_pb:decode_nothandled(Data),
+    Dto = erles_clientapi_pb:decode_nothandled(Data),
     case Dto#nothandled.reason of
         'NotMaster' ->
-            MasterInfo = erlesque_clientapi_pb:decode_nothandled_masterinfo(Dto#nothandled.additional_info),
-            Ip = erlesque_utils:parse_ip(MasterInfo#nothandled_masterinfo.external_tcp_address),
+            MasterInfo = erles_clientapi_pb:decode_nothandled_masterinfo(Dto#nothandled.additional_info),
+            Ip = erles_utils:parse_ip(MasterInfo#nothandled_masterinfo.external_tcp_address),
             Port = MasterInfo#nothandled_masterinfo.external_tcp_port,
             cancel_timer(State#state.timer_ref),
-            case erlesque_conn:reconnect(State#state.conn_pid, Ip, Port) of
+            case erles_conn:reconnect(State#state.conn_pid, Ip, Port) of
                 already_connected ->
                     issue_request(State);
                 ok ->
@@ -189,8 +189,8 @@ retry(Reason, State) ->
     case Retries >= 0 of
         true ->
             cancel_timer(State#state.timer_ref),
-            NewCorrId = erlesque_utils:gen_uuid(),
-            erlesque_fsm:operation_restarted(State#state.esq_pid, State#state.corr_id, NewCorrId),
+            NewCorrId = erles_utils:gen_uuid(),
+            erles_fsm:operation_restarted(State#state.esq_pid, State#state.corr_id, NewCorrId),
             TimerRef = erlang:start_timer(State#state.retry_delay, self(), retry),
             {next_state, retry_pending, State#state{corr_id=NewCorrId, retries=Retries, timer_ref=TimerRef}};
         false ->
@@ -228,8 +228,8 @@ create_package(CorrId, Auth, write_events, {StreamId, ExpectedVersion, Events, R
         end, Events),
         require_master = RequireMaster
     },
-    Bin = erlesque_clientapi_pb:encode_writeevents(Dto),
-    erlesque_pkg:create(write_events, CorrId, Auth, Bin);
+    Bin = erles_clientapi_pb:encode_writeevents(Dto),
+    erles_pkg:create(write_events, CorrId, Auth, Bin);
 
 create_package(CorrId, Auth, transaction_start, {StreamId, ExpectedVersion, RequireMaster}) ->
     Dto = #transactionstart{
@@ -237,8 +237,8 @@ create_package(CorrId, Auth, transaction_start, {StreamId, ExpectedVersion, Requ
         expected_version = ExpectedVersion,
         require_master = RequireMaster
     },
-    Bin = erlesque_clientapi_pb:encode_transactionstart(Dto),
-    erlesque_pkg:create(transaction_start, CorrId, Auth, Bin);
+    Bin = erles_clientapi_pb:encode_transactionstart(Dto),
+    erles_pkg:create(transaction_start, CorrId, Auth, Bin);
 
 create_package(CorrId, Auth, transaction_write, {TransactionId, Events, RequireMaster}) ->
     Dto = #transactionwrite{
@@ -253,16 +253,16 @@ create_package(CorrId, Auth, transaction_write, {TransactionId, Events, RequireM
         end, Events),
         require_master = RequireMaster
     },
-    Bin = erlesque_clientapi_pb:encode_transactionwrite(Dto),
-    erlesque_pkg:create(transaction_write, CorrId, Auth, Bin);
+    Bin = erles_clientapi_pb:encode_transactionwrite(Dto),
+    erles_pkg:create(transaction_write, CorrId, Auth, Bin);
 
 create_package(CorrId, Auth, transaction_commit, {TransactionId, RequireMaster}) ->
     Dto = #transactioncommit{
         transaction_id = TransactionId,
         require_master = RequireMaster
     },
-    Bin = erlesque_clientapi_pb:encode_transactioncommit(Dto),
-    erlesque_pkg:create(transaction_commit, CorrId, Auth, Bin);
+    Bin = erles_clientapi_pb:encode_transactioncommit(Dto),
+    erles_pkg:create(transaction_commit, CorrId, Auth, Bin);
 
 create_package(CorrId, Auth, delete_stream, {StreamId, ExpectedVersion, RequireMaster}) ->
     Dto = #deletestream{
@@ -270,8 +270,8 @@ create_package(CorrId, Auth, delete_stream, {StreamId, ExpectedVersion, RequireM
         expected_version = ExpectedVersion,
         require_master = RequireMaster
     },
-    Bin = erlesque_clientapi_pb:encode_deletestream(Dto),
-    erlesque_pkg:create(delete_stream, CorrId, Auth, Bin);
+    Bin = erles_clientapi_pb:encode_deletestream(Dto),
+    erles_pkg:create(delete_stream, CorrId, Auth, Bin);
 
 create_package(CorrId, Auth, read_event, {StreamId, EventNumber, ResolveLinks, RequireMaster}) ->
     Dto = #readevent{
@@ -280,8 +280,8 @@ create_package(CorrId, Auth, read_event, {StreamId, EventNumber, ResolveLinks, R
         resolve_link_tos = ResolveLinks,
         require_master = RequireMaster
     },
-    Bin = erlesque_clientapi_pb:encode_readevent(Dto),
-    erlesque_pkg:create(read_event, CorrId, Auth, Bin);
+    Bin = erles_clientapi_pb:encode_readevent(Dto),
+    erles_pkg:create(read_event, CorrId, Auth, Bin);
 
 create_package(CorrId, Auth, read_stream_events_forward, {StreamId, FromEventNumber, MaxCount, ResolveLinks, RequireMaster}) ->
     Dto = #readstreamevents{
@@ -291,8 +291,8 @@ create_package(CorrId, Auth, read_stream_events_forward, {StreamId, FromEventNum
         resolve_link_tos = ResolveLinks,
         require_master = RequireMaster
     },
-    Bin = erlesque_clientapi_pb:encode_readstreamevents(Dto),
-    erlesque_pkg:create(read_stream_events_forward, CorrId, Auth, Bin);
+    Bin = erles_clientapi_pb:encode_readstreamevents(Dto),
+    erles_pkg:create(read_stream_events_forward, CorrId, Auth, Bin);
 
 create_package(CorrId, Auth, read_stream_events_backward, {StreamId, FromEventNumber, MaxCount, ResolveLinks, RequireMaster}) ->
     Dto = #readstreamevents{
@@ -302,8 +302,8 @@ create_package(CorrId, Auth, read_stream_events_backward, {StreamId, FromEventNu
         resolve_link_tos = ResolveLinks,
         require_master = RequireMaster
     },
-    Bin = erlesque_clientapi_pb:encode_readstreamevents(Dto),
-    erlesque_pkg:create(read_stream_events_backward, CorrId, Auth, Bin);
+    Bin = erles_clientapi_pb:encode_readstreamevents(Dto),
+    erles_pkg:create(read_stream_events_backward, CorrId, Auth, Bin);
 
 create_package(CorrId, Auth, read_all_events_forward, {{tfpos, CommitPos, PreparePos}, MaxCount, ResolveLinks, RequireMaster}) ->
     Dto = #readallevents{
@@ -313,8 +313,8 @@ create_package(CorrId, Auth, read_all_events_forward, {{tfpos, CommitPos, Prepar
         resolve_link_tos = ResolveLinks,
         require_master = RequireMaster
     },
-    Bin = erlesque_clientapi_pb:encode_readallevents(Dto),
-    erlesque_pkg:create(read_all_events_forward, CorrId, Auth, Bin);
+    Bin = erles_clientapi_pb:encode_readallevents(Dto),
+    erles_pkg:create(read_all_events_forward, CorrId, Auth, Bin);
 
 create_package(CorrId, Auth, read_all_events_backward, {{tfpos, CommitPos, PreparePos}, MaxCount, ResolveLinks, RequireMaster}) ->
     Dto = #readallevents{
@@ -324,49 +324,49 @@ create_package(CorrId, Auth, read_all_events_backward, {{tfpos, CommitPos, Prepa
         resolve_link_tos = ResolveLinks,
         require_master = RequireMaster
     },
-    Bin = erlesque_clientapi_pb:encode_readallevents(Dto),
-    erlesque_pkg:create(read_all_events_backward, CorrId, Auth, Bin).
+    Bin = erles_clientapi_pb:encode_readallevents(Dto),
+    erles_pkg:create(read_all_events_backward, CorrId, Auth, Bin).
 
 
 deserialize_result(write_events, write_events_completed, Data) ->
-    Dto = erlesque_clientapi_pb:decode_writeeventscompleted(Data),
+    Dto = erles_clientapi_pb:decode_writeeventscompleted(Data),
     case Dto#writeeventscompleted.result of
         'Success' -> {complete, {ok, Dto#writeeventscompleted.last_event_number}};
         Other -> decode_write_failure(Other)
     end;
 
 deserialize_result(transaction_start, transaction_start_completed, Data) ->
-    Dto = erlesque_clientapi_pb:decode_transactionstartcompleted(Data),
+    Dto = erles_clientapi_pb:decode_transactionstartcompleted(Data),
     case Dto#transactionstartcompleted.result of
         'Success' -> {complete, {ok, Dto#transactionstartcompleted.transaction_id}};
         Other -> decode_write_failure(Other)
     end;
 
 deserialize_result(transaction_write, transaction_write_completed, Data) ->
-    Dto = erlesque_clientapi_pb:decode_transactionwritecompleted(Data),
+    Dto = erles_clientapi_pb:decode_transactionwritecompleted(Data),
     case Dto#transactionwritecompleted.result of
         'Success' -> {complete, ok};
         Other -> decode_write_failure(Other)
     end;
 
 deserialize_result(transaction_commit, transaction_commit_completed, Data) ->
-    Dto = erlesque_clientapi_pb:decode_transactioncommitcompleted(Data),
+    Dto = erles_clientapi_pb:decode_transactioncommitcompleted(Data),
     case Dto#transactioncommitcompleted.result of
         'Success' -> {complete, {ok, Dto#transactioncommitcompleted.last_event_number}};
         Other -> decode_write_failure(Other)
     end;
 
 deserialize_result(delete_stream, delete_stream_completed, Data) ->
-    Dto = erlesque_clientapi_pb:decode_deletestreamcompleted(Data),
+    Dto = erles_clientapi_pb:decode_deletestreamcompleted(Data),
     case Dto#deletestreamcompleted.result of
         'Success' -> {complete, ok};
         Other -> decode_write_failure(Other)
     end;
 
 deserialize_result(read_event, read_event_completed, Data) ->
-    Dto = erlesque_clientapi_pb:decode_readeventcompleted(Data),
+    Dto = erles_clientapi_pb:decode_readeventcompleted(Data),
     case Dto#readeventcompleted.result of
-        'Success' ->       {complete, {ok, erlesque_utils:resolved_event(stream, Dto#readeventcompleted.event)}};
+        'Success' ->       {complete, {ok, erles_utils:resolved_event(stream, Dto#readeventcompleted.event)}};
         'NotFound' ->      {complete, {error, no_event}};
         'NoStream' ->      {complete, {error, no_stream}};
         'StreamDeleted' -> {complete, {error, stream_deleted}};
@@ -398,10 +398,10 @@ decode_write_failure(OperationResult) ->
     end.
 
 deserialize_streameventscompleted(Data) ->
-    Dto = erlesque_clientapi_pb:decode_readstreameventscompleted(Data),
+    Dto = erles_clientapi_pb:decode_readstreameventscompleted(Data),
     case Dto#readstreameventscompleted.result of
         'Success' ->       {complete, {ok,
-            [erlesque_utils:resolved_event(stream, E) || E <- Dto#readstreameventscompleted.events],
+            [erles_utils:resolved_event(stream, E) || E <- Dto#readstreameventscompleted.events],
             Dto#readstreameventscompleted.next_event_number,
             Dto#readstreameventscompleted.is_end_of_stream
         }};
@@ -412,10 +412,10 @@ deserialize_streameventscompleted(Data) ->
     end.
 
 deserialize_alleventscompleted(Data) ->
-    Dto = erlesque_clientapi_pb:decode_readalleventscompleted(Data),
+    Dto = erles_clientapi_pb:decode_readalleventscompleted(Data),
     case Dto#readalleventscompleted.result of
         'Success' ->       {complete, {ok,
-            [erlesque_utils:resolved_event(all, E) || E <- Dto#readalleventscompleted.events],
+            [erles_utils:resolved_event(all, E) || E <- Dto#readalleventscompleted.events],
             {tfpos, Dto#readalleventscompleted.next_commit_position, Dto#readalleventscompleted.next_prepare_position},
             Dto#readalleventscompleted.events =:= []
         }};

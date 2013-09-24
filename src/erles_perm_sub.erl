@@ -1,10 +1,10 @@
--module(erlesque_perm_sub).
+-module(erles_perm_sub).
 -behavior(gen_server).
 
 -export([start_link/7, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, code_change/3, terminate/2]).
 
--include("erlesque_internal.hrl").
+-include("erles_internal.hrl").
 
 -record(state, {worker_pid,
                 sub_pid,
@@ -95,7 +95,7 @@ catchup(State, Pos={_PosKind, StreamPos}) ->
         StreamId = State#worker.stream_id,
         MaxCount = State#worker.max_count,
         Opts = State#worker.opts,
-        case erlesque:read_stream(EsqPid, StreamId, StreamPos, MaxCount, forward, Opts) of
+        case erles:read_stream(EsqPid, StreamId, StreamPos, MaxCount, forward, Opts) of
             {ok, Events, NextPos, false} ->
                 send_events(State#worker.sub_pid, Events, Pos),
                 catchup(State, {inclusive, NextPos});
@@ -113,7 +113,7 @@ subscribe(State, Pos) ->
         EsqPid = State#worker.esq_pid,
         StreamId = State#worker.stream_id,
         Opts = State#worker.opts,
-        case erlesque:subscribe(EsqPid, StreamId, Opts) of
+        case erles:subscribe(EsqPid, StreamId, Opts) of
             {ok, SubPid, SubPos} ->
                 case Pos of
                     live -> live(State, {inclusive, SubPos}, SubPid);
@@ -125,13 +125,13 @@ subscribe(State, Pos) ->
     end.
 
 switchover(State, Pos={_PosKind, StreamPos}, SubscriptionPid) ->
-    receive stop -> erlesque:unsubscribe(SubscriptionPid)
+    receive stop -> erles:unsubscribe(SubscriptionPid)
     after 0 ->
         EsqPid = State#worker.esq_pid,
         StreamId = State#worker.stream_id,
         MaxCount = State#worker.max_count,
         Opts = State#worker.opts,
-        case erlesque:read_stream(EsqPid, StreamId, StreamPos, MaxCount, forward, Opts) of
+        case erles:read_stream(EsqPid, StreamId, StreamPos, MaxCount, forward, Opts) of
             {ok, Events, NextPos, false} ->
                 send_events(State#worker.sub_pid, Events, Pos),
                 switchover(State, {inclusive, NextPos}, SubscriptionPid);
@@ -139,7 +139,7 @@ switchover(State, Pos={_PosKind, StreamPos}, SubscriptionPid) ->
                 send_events(State#worker.sub_pid, Events, Pos),
                 live(State, {inclusive, NextPos}, SubscriptionPid);
             {error, Reason} ->
-                erlesque:unsubscribe(SubscriptionPid),
+                erles:unsubscribe(SubscriptionPid),
                 stop(State#worker.perm_sub_pid, {read_failed, Reason})
         end
     end.
@@ -147,7 +147,7 @@ switchover(State, Pos={_PosKind, StreamPos}, SubscriptionPid) ->
 live(State, Pos, SubscriptionPid) ->
     receive
         stop ->
-            erlesque:unsubscribe(SubscriptionPid);
+            erles:unsubscribe(SubscriptionPid);
         {unsubscribed, {aborted, _}} ->
             stop(State#worker.perm_sub_pid, subscription_aborted);
         {unsubscribed, _Reason} ->
