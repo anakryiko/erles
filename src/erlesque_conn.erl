@@ -215,7 +215,7 @@ connect_direct(ConnType, AttemptsLeft, S, Ip, Port)
             {ok, {Socket, WorkerPid, Ip, Port}};
         {error, Reason} ->
             io:format("Connection to [~p:~p] failed. Reason: ~p.~n", [Ip, Port, Reason]),
-            connect_direct(retry, AttemptsLeft-1, S, Ip, Port)
+            connect_direct(reconnect, AttemptsLeft-1, S, Ip, Port)
     end.
 
 send_pkg(Socket, Pkg) ->

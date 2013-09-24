@@ -366,7 +366,7 @@ deserialize_result(delete_stream, delete_stream_completed, Data) ->
 deserialize_result(read_event, read_event_completed, Data) ->
     Dto = erlesque_clientapi_pb:decode_readeventcompleted(Data),
     case Dto#readeventcompleted.result of
-        'Success' ->       {complete, {ok, erlesque_utils:resolved_event(Dto#readeventcompleted.event)}};
+        'Success' ->       {complete, {ok, erlesque_utils:resolved_event(stream, Dto#readeventcompleted.event)}};
         'NotFound' ->      {complete, {error, no_event}};
         'NoStream' ->      {complete, {error, no_stream}};
         'StreamDeleted' -> {complete, {error, stream_deleted}};
@@ -400,11 +400,11 @@ decode_write_failure(OperationResult) ->
 deserialize_streameventscompleted(Data) ->
     Dto = erlesque_clientapi_pb:decode_readstreameventscompleted(Data),
     case Dto#readstreameventscompleted.result of
-        'Success' ->       {complete, {ok, {
-            erlesque_utils:resolved_events(Dto#readstreameventscompleted.events),
+        'Success' ->       {complete, {ok,
+            [erlesque_utils:resolved_event(stream, E) || E <- Dto#readstreameventscompleted.events],
             Dto#readstreameventscompleted.next_event_number,
             Dto#readstreameventscompleted.is_end_of_stream
-        }}};
+        }};
         'NoStream' ->      {complete, {error, no_stream}};
         'StreamDeleted' -> {complete, {error, stream_deleted}};
         'Error' ->         {complete, {error, Dto#readstreameventscompleted.error}};
@@ -414,11 +414,11 @@ deserialize_streameventscompleted(Data) ->
 deserialize_alleventscompleted(Data) ->
     Dto = erlesque_clientapi_pb:decode_readalleventscompleted(Data),
     case Dto#readalleventscompleted.result of
-        'Success' ->       {complete, {ok, {
-            erlesque_utils:resolved_events(Dto#readalleventscompleted.events),
+        'Success' ->       {complete, {ok,
+            [erlesque_utils:resolved_event(all, E) || E <- Dto#readalleventscompleted.events],
             {tfpos, Dto#readalleventscompleted.next_commit_position, Dto#readalleventscompleted.next_prepare_position},
             Dto#readalleventscompleted.events =:= []
-        }}};
+        }};
         'Error' ->         {complete, {error, Dto#readalleventscompleted.error}};
         'AccessDenied' ->  {complete, {error, access_denied}}
     end.

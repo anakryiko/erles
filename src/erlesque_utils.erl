@@ -2,7 +2,7 @@
 -export([gen_uuid/0, uuid_to_string/1, uuid_to_string/2]).
 -export([parse_ip/1]).
 -export([shuffle/1]).
--export([resolved_event/1, resolved_events/1]).
+-export([resolved_event/2]).
 
 -include("erlesque_clientapi_pb.hrl").
 -include("erlesque.hrl").
@@ -98,20 +98,32 @@ shuffle(L) when is_list(L) ->
   [X || {_, X} <- lists:sort([{random:uniform(), Y} || Y <- L])].
 
 
--spec resolved_events(Events :: [#resolvedevent{} | #resolvedindexedevent{}]) -> [#event{}].
+-spec resolved_event(Kind :: 'stream' | 'all',
+                     Event :: #resolvedevent{} | #resolvedindexedevent{}) ->
+    {event, #event{}, non_neg_integer() | {tfpos, non_neg_integer(), non_neg_integer()}}.
 
-resolved_events(Events) ->
-    lists:map(fun(E) -> resolved_event(E) end, Events).
+resolved_event(all, E = #resolvedevent{}) ->
+    ResolvedEvent = event_rec(E#resolvedevent.event),
+    OrigPos = {tfpos, E#resolvedevent.commit_position, E#resolvedevent.prepare_position},
+    {event, ResolvedEvent, OrigPos};
 
+resolved_event(stream, E = #resolvedevent{}) ->
+    OrigEvent = case E#resolvedevent.link of
+        undefined -> E#resolvedevent.event;
+        Link -> Link
+    end,
+    ResolvedEvent = event_rec(E#resolvedevent.event),
+    OrigEventNumber = OrigEvent#eventrecord.event_number,
+    {event, ResolvedEvent, OrigEventNumber};
 
--spec resolved_event(Event :: #resolvedevent{} | #resolvedindexedevent{}) -> #event{}.
-
-resolved_event(E = #resolvedevent{}) ->
-    event_rec(E#resolvedevent.event);
-
-resolved_event(E = #resolvedindexedevent{}) ->
-    event_rec(E#resolvedindexedevent.event).
-
+resolved_event(stream, E = #resolvedindexedevent{}) ->
+    OrigEvent = case E#resolvedindexedevent.link of
+        undefined -> E#resolvedindexedevent.event;
+        Link -> Link
+    end,
+    ResolvedEvent = event_rec(E#resolvedindexedevent.event),
+    OrigEventNumber  = OrigEvent#eventrecord.event_number,
+    {event, ResolvedEvent, OrigEventNumber}.
 
 -spec event_rec(EventRecord :: #eventrecord{}) -> #event{}.
 

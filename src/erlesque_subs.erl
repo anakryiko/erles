@@ -20,6 +20,7 @@
                 auth,
                 timer_ref,
                 stream_id,
+                sub_kind,
                 resolve_links,
                 sub_pid,
                 sub_mon_ref}).
@@ -36,7 +37,14 @@ init({subscribe_to_stream, S=#sys_params{}, {StreamId, ResolveLinks, SubPid}}) -
                    retry_delay = S#sys_params.retry_delay,
                    auth = S#sys_params.auth,
                    timer_ref = none,
-                   stream_id = StreamId,
+                   stream_id = case StreamId of
+                       all -> <<>>;
+                       _   -> StreamId
+                   end,
+                   sub_kind = case StreamId of
+                       all -> all;
+                       _   -> stream
+                   end,
                    resolve_links = ResolveLinks,
                    sub_pid = SubPid,
                    sub_mon_ref = MonRef},
@@ -74,9 +82,11 @@ pending({pkg, Cmd, CorrId, _Auth, Data}, State=#state{corr_id=CorrId}) ->
     case Cmd of
         subscription_confirmation ->
             Dto = erlesque_clientapi_pb:decode_subscriptionconfirmation(Data),
-            LastCommitPos = Dto#subscriptionconfirmation.last_commit_position,
-            LastEventNumber = Dto#subscriptionconfirmation.last_event_number,
-            gen_fsm:reply(State#state.reply_pid, {ok, self(), {LastCommitPos, LastEventNumber}}),
+            SubPos = case State#state.sub_kind of
+                all    -> Dto#subscriptionconfirmation.last_commit_position;
+                stream -> Dto#subscriptionconfirmation.last_event_number
+            end,
+            gen_fsm:reply(State#state.reply_pid, {ok, self(), SubPos}),
             NewState = succeed(State),
             {next_state, subscribed, NewState};
         subscription_dropped ->
@@ -148,8 +158,8 @@ subscribed({pkg, Cmd, CorrId, _Auth, Data}, State=#state{corr_id=CorrId}) ->
     case Cmd of
         stream_event_appeared ->
             Dto = erlesque_clientapi_pb:decode_streameventappeared(Data),
-            Event = erlesque_utils:resolved_event(Dto#streameventappeared.event),
-            notify(State, {event, Event}),
+            EventRes = erlesque_utils:resolved_event(State#state.sub_kind, Dto#streameventappeared.event),
+            notify(State, EventRes),
             {next_state, subscribed, State};
         subscription_dropped ->
             Dto = erlesque_clientapi_pb:decode_subscriptiondropped(Data),

@@ -9,12 +9,10 @@
 -export([delete/3, delete/4]).
 
 -export([read_event/3, read_event/4]).
--export([read_stream_forward/4, read_stream_forward/5]).
--export([read_stream_backward/4, read_stream_backward/5]).
--export([read_all_forward/3, read_all_forward/4]).
--export([read_all_backward/3, read_all_backward/4]).
+-export([read_stream/4, read_stream/5, read_stream/6]).
 
 -export([subscribe/2, subscribe/3, unsubscribe/1]).
+-export([subscribe_perm/2, subscribe_perm/3, subscribe_perm/4, unsubscribe_perm/1]).
 
 -export([set_metadata/4, set_metadata/5]).
 -export([get_metadata/2, get_metadata/3, get_metadata/4]).
@@ -23,10 +21,12 @@
 -include("erlesque_internal.hrl").
 
 
--define(EXPECTED_VERSION_ANY, -2).
--define(REQUIRE_MASTER, true).
--define(LAST_EVENT_NUMBER, -1).
--define(LAST_LOG_POSITION, -1).
+-define(EXPVER_ANY, -2).
+-define(LAST_EVENT_NUM, -1).
+-define(LAST_LOG_POS, -1).
+-define(DEF_AUTH, defauth).
+-define(DEF_RESOLVE, true).
+-define(DEF_REQ_MASTER, true).
 
 %%% METADATA AND SYS SETTINGS
 -define(ET_STREAMMETADATA, <<"$metadata">>).
@@ -87,7 +87,7 @@ close(Pid) ->
 
 %%% PING
 ping(Pid) ->
-    gen_fsm:sync_send_event(Pid, {op, {ping, temp, defauth}, []}).
+    gen_fsm:sync_send_event(Pid, {op, {ping, temp, ?DEF_AUTH}, []}).
 
 
 %%% APPEND EVENTS TO STREAM
@@ -96,15 +96,15 @@ append(Pid, StreamId, ExpectedVersion, Events) ->
 
 append(Pid, StreamId, ExpectedVersion, Events, Options) ->
     ExpVer = case ExpectedVersion of
-        any -> ?EXPECTED_VERSION_ANY;
+        any -> ?EXPVER_ANY;
         _ -> ExpectedVersion
     end,
-    Auth = proplists:get_value(auth, Options, defauth),
-    RequireMaster = proplists:get_value(require_master, Options, ?REQUIRE_MASTER),
+    Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
+    RequireMaster = proplists:get_value(require_master, Options, ?DEF_REQ_MASTER),
     append(Pid, StreamId, ExpVer, Events, Auth, RequireMaster).
 
 append(Pid, StreamId, ExpectedVersion, Events, Auth, RequireMaster)
-        when is_integer(ExpectedVersion), ExpectedVersion >= ?EXPECTED_VERSION_ANY,
+        when is_integer(ExpectedVersion), ExpectedVersion >= ?EXPVER_ANY,
              is_list(Events),
              is_boolean(RequireMaster) ->
     gen_fsm:sync_send_event(Pid,
@@ -117,15 +117,15 @@ transaction_start(Pid, StreamId, ExpectedVersion) ->
 
 transaction_start(Pid, StreamId, ExpectedVersion, Options) ->
     ExpVer = case ExpectedVersion of
-        any -> ?EXPECTED_VERSION_ANY;
+        any -> ?EXPVER_ANY;
         _ -> ExpectedVersion
     end,
-    Auth = proplists:get_value(auth, Options, defauth),
-    RequireMaster = proplists:get_value(require_master, Options, ?REQUIRE_MASTER),
+    Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
+    RequireMaster = proplists:get_value(require_master, Options, ?DEF_REQ_MASTER),
     transaction_start(Pid, StreamId, ExpVer, Auth, RequireMaster).
 
 transaction_start(Pid, StreamId, ExpectedVersion, Auth, RequireMaster)
-        when is_integer(ExpectedVersion), ExpectedVersion >= ?EXPECTED_VERSION_ANY,
+        when is_integer(ExpectedVersion), ExpectedVersion >= ?EXPVER_ANY,
              is_boolean(RequireMaster) ->
     gen_fsm:sync_send_event(Pid, {op, {transaction_start, temp, Auth},
                                       {StreamId, ExpectedVersion, RequireMaster}}, infinity).
@@ -136,8 +136,8 @@ transaction_write(Pid, TransactionId, Events) ->
     transaction_write(Pid, TransactionId, Events, []).
 
 transaction_write(Pid, TransactionId, Events, Options) ->
-    Auth = proplists:get_value(auth, Options, defauth),
-    RequireMaster = proplists:get_value(require_master, Options, ?REQUIRE_MASTER),
+    Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
+    RequireMaster = proplists:get_value(require_master, Options, ?DEF_REQ_MASTER),
     transaction_write(Pid, TransactionId, Events, Auth, RequireMaster).
 
 transaction_write(Pid, TransactionId, Events, Auth, RequireMaster)
@@ -153,8 +153,8 @@ transaction_commit(Pid, TransactionId) ->
     transaction_commit(Pid, TransactionId, []).
 
 transaction_commit(Pid, TransactionId, Options) ->
-    Auth = proplists:get_value(auth, Options, defauth),
-    RequireMaster = proplists:get_value(require_master, Options, ?REQUIRE_MASTER),
+    Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
+    RequireMaster = proplists:get_value(require_master, Options, ?DEF_REQ_MASTER),
     transaction_commit(Pid, TransactionId, Auth, RequireMaster).
 
 transaction_commit(Pid, TransactionId, Auth, RequireMaster)
@@ -170,15 +170,15 @@ delete(Pid, StreamId, ExpectedVersion) ->
 
 delete(Pid, StreamId, ExpectedVersion, Options) ->
     ExpVer = case ExpectedVersion of
-        any -> ?EXPECTED_VERSION_ANY;
-        _ -> ExpectedVersion
+        any -> ?EXPVER_ANY;
+        _   -> ExpectedVersion
     end,
-    Auth = proplists:get_value(auth, Options, defauth),
-    RequireMaster = proplists:get_value(require_master, Options, ?REQUIRE_MASTER),
+    Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
+    RequireMaster = proplists:get_value(require_master, Options, ?DEF_REQ_MASTER),
     delete(Pid, StreamId, ExpVer, Auth, RequireMaster).
 
 delete(Pid, StreamId, ExpectedVersion, Auth, RequireMaster)
-    when is_integer(ExpectedVersion), ExpectedVersion >= ?EXPECTED_VERSION_ANY,
+    when is_integer(ExpectedVersion), ExpectedVersion >= ?EXPVER_ANY,
          is_boolean(RequireMaster) ->
     gen_fsm:sync_send_event(Pid, {op, {delete_stream, temp, Auth},
                                       {StreamId, ExpectedVersion, RequireMaster}}, infinity).
@@ -190,144 +190,121 @@ read_event(Pid, StreamId, EventNumber) ->
 
 read_event(Pid, StreamId, EventNumber, Options) ->
     Pos = case EventNumber of
-        last -> ?LAST_EVENT_NUMBER;
-        _ -> EventNumber
+        first -> 0;
+        last  -> ?LAST_EVENT_NUM;
+        _     -> EventNumber
     end,
-    Auth = proplists:get_value(auth, Options, defauth),
-    ResolveLinks = proplists:get_value(resolve, Options, false),
-    RequireMaster = proplists:get_value(require_master, Options, ?REQUIRE_MASTER),
+    Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
+    ResolveLinks = proplists:get_value(resolve, Options, ?DEF_RESOLVE),
+    RequireMaster = proplists:get_value(require_master, Options, ?DEF_REQ_MASTER),
     read_event(Pid, StreamId, Pos, Auth, ResolveLinks, RequireMaster).
 
 read_event(Pid, StreamId, EventNumber, Auth, ResolveLinks, RequireMaster)
-        when is_integer(EventNumber), EventNumber >= ?LAST_EVENT_NUMBER,
+        when is_integer(EventNumber), EventNumber >= ?LAST_EVENT_NUM,
              is_boolean(ResolveLinks),
              is_boolean(RequireMaster) ->
     gen_fsm:sync_send_event(Pid, {op, {read_event, temp, Auth},
                                       {StreamId, EventNumber, ResolveLinks, RequireMaster}}, infinity).
 
 
-%%% READ STREAM EVENTS IN FORWARD DIRECTION
-read_stream_forward(Pid, StreamId, FromEventNumber, MaxCount) ->
-    read_stream_forward(Pid, StreamId, FromEventNumber, MaxCount, []).
+%%% READ STREAM OR ALL EVENTS
+read_stream(Pid, StreamId, From, MaxCount) ->
+    read_stream(Pid, StreamId, From, MaxCount, forward, []).
 
-read_stream_forward(Pid, StreamId, FromEventNumber, MaxCount, Options) ->
-    Pos = case FromEventNumber of
-        first -> 0;
-        _ -> FromEventNumber
-    end,
-    Auth = proplists:get_value(auth, Options, defauth),
-    ResolveLinks = proplists:get_value(resolve, Options, false),
-    RequireMaster = proplists:get_value(require_master, Options, ?REQUIRE_MASTER),
-    read_stream_forward(Pid, StreamId, Pos, MaxCount, Auth, ResolveLinks, RequireMaster).
+read_stream(Pid, StreamId, From, MaxCount, Direction) ->
+    read_stream(Pid, StreamId, From, MaxCount, Direction, []).
 
-read_stream_forward(Pid, StreamId, FromEventNumber, MaxCount, Auth, ResolveLinks, RequireMaster)
-        when is_integer(FromEventNumber), FromEventNumber >= 0,
-             is_integer(MaxCount), MaxCount > 0,
-             is_boolean(ResolveLinks),
-             is_boolean(RequireMaster) ->
-    gen_fsm:sync_send_event(Pid, {op, {read_stream_events_forward, temp, Auth},
-                                      {StreamId, FromEventNumber, MaxCount, ResolveLinks, RequireMaster}}, infinity).
+read_stream(Pid, StreamId, From, MaxCount, Direction, Options) ->
+    FromPos = stream_pos(StreamId, From, Direction),
+    Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
+    ResolveLinks = proplists:get_value(resolve, Options, ?DEF_RESOLVE),
+    RequireMaster = proplists:get_value(require_master, Options, ?DEF_REQ_MASTER),
+    read_stream(Pid, StreamId, FromPos, MaxCount, Direction, Auth, ResolveLinks, RequireMaster).
 
-
-%%% READ STREAM EVENTS IN BACKWARD DIRECTION
-read_stream_backward(Pid, StreamId, FromEventNumber, MaxCount) ->
-    read_stream_backward(Pid, StreamId, FromEventNumber, MaxCount, []).
-
-read_stream_backward(Pid, StreamId, FromEventNumber, MaxCount, Options) ->
-    Pos = case FromEventNumber of
-        last -> ?LAST_EVENT_NUMBER;
-        _ -> FromEventNumber
-    end,
-    Auth = proplists:get_value(auth, Options, defauth),
-    ResolveLinks = proplists:get_value(resolve, Options, false),
-    RequireMaster = proplists:get_value(require_master, Options, ?REQUIRE_MASTER),
-    read_stream_backward(Pid, StreamId, Pos, MaxCount, Auth, ResolveLinks, RequireMaster).
-
- read_stream_backward(Pid, StreamId, FromEventNumber, MaxCount, Auth, ResolveLinks, RequireMaster)
-        when is_integer(FromEventNumber), FromEventNumber >= ?LAST_EVENT_NUMBER,
-             is_integer(MaxCount), MaxCount > 0,
-             is_boolean(ResolveLinks),
-             is_boolean(RequireMaster) ->
-    gen_fsm:sync_send_event(Pid, {op, {read_stream_events_backward, temp, Auth},
-                                      {StreamId, FromEventNumber, MaxCount, ResolveLinks, RequireMaster}}, infinity).
-
-
-%%% READ ALL EVENTS IN FORWARD DIRECTION
-read_all_forward(Pid, FromPos, MaxCount) ->
-    read_all_forward(Pid, FromPos, MaxCount, []).
-
-read_all_forward(Pid, FromPos, MaxCount, Options) ->
-    Pos = case FromPos of
-        first -> {tfpos, 0, 0};
-        {tfpos, _, _} -> FromPos
-    end,
-    Auth = proplists:get_value(auth, Options, defauth),
-    ResolveLinks = proplists:get_value(resolve, Options, false),
-    RequireMaster = proplists:get_value(require_master, Options, ?REQUIRE_MASTER),
-    read_all_forward(Pid, Pos, MaxCount, Auth, ResolveLinks, RequireMaster).
-
-read_all_forward(Pid, FromPos={tfpos, CommitPos, PreparePos}, MaxCount, Auth, ResolveLinks, RequireMaster)
-        when is_integer(CommitPos), CommitPos >= ?LAST_LOG_POSITION,
-             is_integer(PreparePos), PreparePos >= ?LAST_LOG_POSITION,
+read_stream(Pid, all, From={tfpos, CommitPos, PreparePos}, MaxCount, forward, Auth, ResolveLinks, RequireMaster)
+        when is_integer(CommitPos), CommitPos >= 0,
+             is_integer(PreparePos), PreparePos >= 0,
              is_integer(MaxCount), MaxCount > 0,
              is_boolean(ResolveLinks),
              is_boolean(RequireMaster) ->
     gen_fsm:sync_send_event(Pid, {op, {read_all_events_forward, temp, Auth},
-                                      {FromPos, MaxCount, ResolveLinks, RequireMaster}}, infinity).
+                                      {From, MaxCount, ResolveLinks, RequireMaster}}, infinity);
 
-
-%%% READ ALL EVENTS IN BACKWARD DIRECTION
-read_all_backward(Pid, FromPos, MaxCount) ->
-    read_all_backward(Pid, FromPos, MaxCount, []).
-
-read_all_backward(Pid, FromPos, MaxCount, Options) ->
-    Pos = case FromPos of
-        last -> {tfpos, ?LAST_LOG_POSITION, ?LAST_LOG_POSITION};
-        {tfpos, _, _} -> FromPos
-    end,
-    Auth = proplists:get_value(auth, Options, defauth),
-    ResolveLinks = proplists:get_value(resolve, Options, false),
-    RequireMaster = proplists:get_value(require_master, Options, ?REQUIRE_MASTER),
-    read_all_backward(Pid, Pos, MaxCount, Auth, ResolveLinks, RequireMaster).
-
-read_all_backward(Pid, FromPos={tfpos, CommitPos, PreparePos}, MaxCount, Auth, ResolveLinks, RequireMaster)
-        when is_integer(CommitPos), CommitPos >= ?LAST_LOG_POSITION,
-             is_integer(PreparePos), PreparePos >= ?LAST_LOG_POSITION,
+read_stream(Pid, all, From={tfpos, CommitPos, PreparePos}, MaxCount, backward, Auth, ResolveLinks, RequireMaster)
+        when is_integer(CommitPos), CommitPos >= ?LAST_LOG_POS,
+             is_integer(PreparePos), PreparePos >= ?LAST_LOG_POS,
              is_integer(MaxCount), MaxCount > 0,
              is_boolean(ResolveLinks),
              is_boolean(RequireMaster) ->
     gen_fsm:sync_send_event(Pid, {op, {read_all_events_backward, temp, Auth},
-                                      {FromPos, MaxCount, ResolveLinks, RequireMaster}}, infinity).
+                                      {From, MaxCount, ResolveLinks, RequireMaster}}, infinity);
+
+read_stream(Pid, StreamId, From, MaxCount, forward, Auth, ResolveLinks, RequireMaster)
+        when is_integer(From), From >= 0,
+             is_integer(MaxCount), MaxCount > 0,
+             is_boolean(ResolveLinks),
+             is_boolean(RequireMaster) ->
+    gen_fsm:sync_send_event(Pid, {op, {read_stream_events_forward, temp, Auth},
+                                      {StreamId, From, MaxCount, ResolveLinks, RequireMaster}}, infinity);
+
+read_stream(Pid, StreamId, From, MaxCount, backward, Auth, ResolveLinks, RequireMaster)
+        when is_integer(From), From >= ?LAST_EVENT_NUM,
+             is_integer(MaxCount), MaxCount > 0,
+             is_boolean(ResolveLinks),
+             is_boolean(RequireMaster) ->
+    gen_fsm:sync_send_event(Pid, {op, {read_stream_events_backward, temp, Auth},
+                                      {StreamId, From, MaxCount, ResolveLinks, RequireMaster}}, infinity).
+
+stream_pos(all, first, forward)             -> {tfpos, 0, 0};
+stream_pos(all, last, backward)             -> {tfpos, ?LAST_LOG_POS, ?LAST_LOG_POS};
+stream_pos(all, {tfpos, C, P}, _Dir)        -> {tfpos, C, P};
+stream_pos(_StreamId, first, forward)       -> 0;
+stream_pos(_StreamId, last, backward)       -> ?LAST_EVENT_NUM;
+stream_pos(_StreamId, EventNumber, _Dir)    -> EventNumber.
 
 
-%%% PRIMITIVE SUBSCRIPTION TO STREAM
+%%% PRIMITIVE SUBSCRIPTION
 subscribe(Pid, StreamId) ->
     subscribe(Pid, StreamId, []).
 
 subscribe(Pid, StreamId, Options) ->
-    Auth = proplists:get_value(auth, Options, defauth),
-    ResolveLinks = proplists:get_value(resolve, Options, false),
+    Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
+    ResolveLinks = proplists:get_value(resolve, Options, ?DEF_RESOLVE),
     SubscriberPid = proplists:get_value(subscriber, Options, self()),
     subscribe(Pid, StreamId, Auth, ResolveLinks, SubscriberPid).
 
 subscribe(Pid, StreamId, Auth, ResolveLinks, SubscriberPid) ->
-    Stream = case StreamId of
-        all -> <<>>;
-        _ -> StreamId
-    end,
     gen_fsm:sync_send_event(Pid, {op, {subscribe_to_stream, perm, Auth},
-                                      {Stream, ResolveLinks, SubscriberPid}}, infinity).
+                                      {StreamId, ResolveLinks, SubscriberPid}}, infinity).
 
 unsubscribe(SubscriptionPid) ->
     gen_fsm:send_event(SubscriptionPid, unsubscribe).
 
 
-%%% SET STREAM METADATA
-set_metadata(Pid, StreamId, ExpectedVersion, RawMeta) when is_binary(RawMeta) ->
-    set_metadata(Pid, StreamId, ExpectedVersion, RawMeta, []);
+%%% PERMANENT CATCH-UP SUBSCRIPTION
+subscribe_perm(Pid, StreamId) ->
+    subscribe_perm(Pid, StreamId, live, []).
 
-set_metadata(Pid, StreamId, ExpectedVersion, Meta = #stream_meta{}) ->
+subscribe_perm(Pid, StreamId, From) ->
+    subscribe_perm(Pid, StreamId, From, []).
+
+subscribe_perm(Pid, StreamId, From, Options) ->
+    Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
+    ResolveLinks = proplists:get_value(resolve, Options, ?DEF_RESOLVE),
+    SubscriberPid = proplists:get_value(subscriber, Options, self()),
+    MaxCount = proplists:get_value(max_count, Options, 100),
+    erlesque_perm_sub:start_link(Pid, StreamId, From, SubscriberPid, Auth, ResolveLinks, MaxCount).
+
+unsubscribe_perm(SubscrPid) ->
+    erlesque_perm_sub:stop(SubscrPid).
+
+
+%%% SET STREAM METADATA
+set_metadata(Pid, StreamId, ExpectedVersion, Meta) ->
     set_metadata(Pid, StreamId, ExpectedVersion, Meta, []).
+
+set_metadata(Pid, all, ExpectedVersion, RawMeta, Options) ->
+    set_metadata(Pid, <<"$$all">>, ExpectedVersion, RawMeta, Options);
 
 set_metadata(Pid, StreamId, ExpectedVersion, RawMeta, Options) when is_binary(RawMeta) ->
     MetaEvent = #event_data{data=RawMeta, data_type=raw, event_type=?ET_STREAMMETADATA},
@@ -338,6 +315,7 @@ set_metadata(Pid, StreamId, ExpectedVersion, Meta = #stream_meta{}, Options) ->
     JsonBin = jsx:encode(Json),
     MetaEvent = #event_data{data=JsonBin, data_type=json, event_type=?ET_STREAMMETADATA},
     append(Pid, <<"$$", StreamId/binary>>, ExpectedVersion, [MetaEvent], Options).
+
 
 meta_to_metajson(Meta) ->
     J1 = meta_to_metajson(Meta#stream_meta.custom, custom, []),
@@ -375,10 +353,10 @@ meta_to_metajson(Value, JsonKey, MetaJson) ->
 
 %%% GET STREAM METADATA
 get_metadata(Pid, StreamId) ->
-    get_metadata(Pid, StreamId, structured).
+    get_metadata(Pid, StreamId, struct).
 
-get_metadata(Pid, StreamId, structured) ->
-    get_metadata(Pid, StreamId, structured, []);
+get_metadata(Pid, StreamId, struct) ->
+    get_metadata(Pid, StreamId, struct, []);
 
 get_metadata(Pid, StreamId, raw) when is_list(StreamId) ->
     get_metadata(Pid, list_to_binary(StreamId), raw);
@@ -386,27 +364,30 @@ get_metadata(Pid, StreamId, raw) when is_list(StreamId) ->
 get_metadata(Pid, StreamId, raw) ->
     get_metadata(Pid, StreamId, raw, []).
 
-get_metadata(Pid, StreamId, structured, Options) ->
+get_metadata(Pid, StreamId, struct, Options) ->
     case get_metadata(Pid, StreamId, raw, Options) of
-        {ok, <<>>, EventNumber} ->
-            {ok, #stream_meta{}, EventNumber};
-        {ok, RawMeta, EventNumber} ->
+        {ok, {meta, <<>>, EventNumber}} ->
+            {ok, {meta, #stream_meta{}, EventNumber}};
+        {ok, {meta, RawMeta, EventNumber}} ->
             F = fun(_, _, _) -> {error, bad_json} end,
             Opts = [{error_handler, F}, {incomplete_handler, F}],
             case jsx:decode(RawMeta, Opts) of
                 {error, bad_json} -> {error, bad_json};
-                MetaJson -> {ok, metajson_to_meta(MetaJson), EventNumber}
+                MetaJson -> {ok, {meta, metajson_to_meta(MetaJson), EventNumber}}
             end;
         {error, Reason} ->
             {error, Reason}
     end;
 
+get_metadata(Pid, all, raw, Options) ->
+    get_metadata(Pid, <<"$$all">>, raw, Options);
+
 get_metadata(Pid, StreamId, raw, Options) ->
     case read_event(Pid, <<"$$", StreamId/binary>>, last, Options) of
-        {ok, Event=#event{}} ->
-            {ok, Event#event.data, Event#event.event_number};
+        {ok, {event, Event=#event{}, _EventPos}} ->
+            {ok, {meta, Event#event.data, Event#event.event_number}};
         {error, no_stream} ->
-            {ok, <<>>, -1};
+            {ok, {meta, <<>>, -1}};
         {error, Reason} ->
             {error, Reason}
     end.

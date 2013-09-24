@@ -1,7 +1,7 @@
 -module(erlesque_perm_sub).
 -behavior(gen_server).
 
--export([start_link/6, stop/1]).
+-export([start_link/7, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, code_change/3, terminate/2]).
 
 -include("erlesque_internal.hrl").
@@ -17,14 +17,15 @@
                  max_count,
                  opts}).
 
-start_link(StreamId, Pos, EsqPid, SubPid, MaxCount, Options) when is_list(Options) ->
-    gen_server:start_link(?MODULE, {StreamId, Pos, EsqPid, SubPid, MaxCount, Options}, []).
+start_link(EsqPid, StreamId, From, SubPid, Auth, ResolveLinks, MaxCount) ->
+    InitParams = {EsqPid, StreamId, From, SubPid, Auth, ResolveLinks, MaxCount},
+    gen_server:start_link(?MODULE, InitParams, []).
 
 stop(Pid) ->
     gen_server:cast(Pid, stop).
 
 
-init({StreamId, Pos, EsqPid, SubPid, MaxCount, Options}) ->
+init({EsqPid, StreamId, From, SubPid, Auth, ResolveLinks, MaxCount}) ->
     process_flag(trap_exit, true),
     MonRef = erlang:monitor(process, SubPid),
     WorkerState = #worker{perm_sub_pid=self(),
@@ -32,8 +33,13 @@ init({StreamId, Pos, EsqPid, SubPid, MaxCount, Options}) ->
                           sub_pid=SubPid,
                           stream_id=StreamId,
                           max_count=MaxCount,
-                          opts=Options},
-    WorkerPid = spawn_link(fun() -> catchup(WorkerState, Pos) end),
+                          opts=[{resolve, ResolveLinks}, {auth, Auth}]},
+    WorkerPid = spawn_link(fun() ->
+        case From of
+            live -> subscribe(WorkerState, live);
+            _    -> catchup(WorkerState, From)
+        end
+    end),
     State = #state{worker_pid=WorkerPid,
                    sub_pid=SubPid,
                    sub_mon_ref=MonRef},
@@ -66,8 +72,7 @@ handle_info({'EXIT', WorkerPid, Reason}, State=#state{worker_pid=WorkerPid}) ->
     State#state.sub_pid ! {stopped, self(), {worker_failed, Reason}},
     {stop, normal, State};
 
-handle_info({'DOWN', MonRef, process, SubPid, Reason}, State=#state{sub_pid=SubPid, sub_mon_ref=MonRef}) ->
-    io:format("Stopping permanent subscription due to subscriber is DOWN. Reason: ~p.~n", [Reason]),
+handle_info({'DOWN', MonRef, process, SubPid, _Reason}, State=#state{sub_pid=SubPid, sub_mon_ref=MonRef}) ->
     State#state.worker_pid ! stop,
     {stop, normal, State};
 
@@ -90,7 +95,7 @@ catchup(State, Pos={_PosKind, StreamPos}) ->
         StreamId = State#worker.stream_id,
         MaxCount = State#worker.max_count,
         Opts = State#worker.opts,
-        case erlesque:read_stream_forward(EsqPid, StreamId, StreamPos, MaxCount, Opts) of
+        case erlesque:read_stream(EsqPid, StreamId, StreamPos, MaxCount, forward, Opts) of
             {ok, Events, NextPos, false} ->
                 send_events(State#worker.sub_pid, Events, Pos),
                 catchup(State, {inclusive, NextPos});
@@ -109,8 +114,11 @@ subscribe(State, Pos) ->
         StreamId = State#worker.stream_id,
         Opts = State#worker.opts,
         case erlesque:subscribe(EsqPid, StreamId, Opts) of
-            {ok, SubPid, _SubPos} ->
-                switchover(State, Pos, SubPid);
+            {ok, SubPid, SubPos} ->
+                case Pos of
+                    live -> live(State, {inclusive, SubPos}, SubPid);
+                    _    -> switchover(State, Pos, SubPid)
+                end;
             {error, Reason} ->
                 stop(State#worker.perm_sub_pid, {subscription_failed, Reason})
         end
@@ -123,7 +131,7 @@ switchover(State, Pos={_PosKind, StreamPos}, SubscriptionPid) ->
         StreamId = State#worker.stream_id,
         MaxCount = State#worker.max_count,
         Opts = State#worker.opts,
-        case erlesque:read_stream_forward(EsqPid, StreamId, StreamPos, MaxCount, Opts) of
+        case erlesque:read_stream(EsqPid, StreamId, StreamPos, MaxCount, forward, Opts) of
             {ok, Events, NextPos, false} ->
                 send_events(State#worker.sub_pid, Events, Pos),
                 switchover(State, {inclusive, NextPos}, SubscriptionPid);
