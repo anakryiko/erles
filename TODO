@@ -1,7 +1,1 @@
-1. Subscription messages: add Ref.
-2. Set explicit timeouts on each operation (for gen_fsm).
-3. Configure retry_delay, operation_timeout, etc.
-4. Per-operation auth.
-5. Decide on ResolvedEvent representation.
-6. Test everything.
-7. Do persistent catch-up subscription.
+1. Test everything.
