@@ -1,4 +1,6 @@
 -type uuid() :: <<_:128>>.
+-type event_num() :: non_neg_integer().
+-type tfpos() :: {'tfpos', non_neg_integer(), non_neg_integer()}.
 
 %% Event data to send for write to Event Store
 -record(event_data,
@@ -14,7 +16,7 @@
 -record(event,
         {
             stream_id         :: binary(),
-            event_number      :: non_neg_integer(),
+            event_number      :: event_num(),
             event_id          :: uuid(),
             event_type        :: binary(),
             data              :: binary(),

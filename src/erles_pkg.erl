@@ -6,28 +6,25 @@ create(Cmd, CorrId, Data) ->
 
 create(Cmd, CorrId, noauth, Data) ->
     {pkg, Cmd, CorrId, noauth, Data};
+
 create(Cmd, CorrId, {Login, Pass}, Data) ->
     {pkg, Cmd, CorrId, {Login, Pass}, Data}.
 
-from_binary(Binary) ->
-    case Binary of
-        <<Cmd:8, AuthFlag:1, _Flags:7, CorrId:16/binary, Rest/binary>> ->
-            case AuthFlag of
-                0 ->
-                    {pkg, decode_cmd(Cmd), CorrId, noauth, Rest};
-                1 ->
-                    case Rest of
-                        <<LoginLen:8, Login:LoginLen/binary,
-                          PassLen:8, Pass:PassLen/binary,
-                          Data/binary>> ->
-                            {pkg, decode_cmd(Cmd), CorrId, {Login, Pass}, Data};
-                        _ ->
-                            {error, invalid_auth}
-                    end
-            end;
-        true ->
-            {error, invalid_binary}
-    end.
+
+from_binary(<<Cmd:8, 0:1, _Flags:7, CorrId:16/binary, Rest/binary>>) ->
+    {pkg, decode_cmd(Cmd), CorrId, noauth, Rest};
+
+from_binary(<<Cmd:8, 1:1, _Flags:7, CorrId:16/binary, Rest/binary>>) ->
+    case Rest of
+        <<LoginLen:8, Login:LoginLen/binary, PassLen:8, Pass:PassLen/binary, Data/binary>> ->
+            {pkg, decode_cmd(Cmd), CorrId, {Login, Pass}, Data};
+        _ ->
+            {error, invalid_auth}
+    end;
+
+from_binary(Bin) when is_binary(Bin) ->
+    {error, invalid_binary}.
+
 
 to_binary({pkg, Cmd, CorrId, noauth, Data}) ->
     EncCmd = encode_cmd(Cmd),
@@ -41,6 +38,7 @@ to_binary({pkg, Cmd, CorrId, {Login, Pass}, Data}) ->
     BinData = iolist_to_binary(Data),
     <<EncCmd:8, 1:8, CorrId/binary,
       LoginLen:8, Login/binary, PassLen:8, Pass/binary, BinData/binary>>.
+
 
 decode_cmd(16#01) -> heartbeat_req;
 decode_cmd(16#02) -> heartbeat_resp;
@@ -84,6 +82,7 @@ decode_cmd(16#F3) -> authenticated;
 decode_cmd(16#F4) -> not_authenticated;
 
 decode_cmd(Cmd) when is_integer(Cmd) ->  Cmd.
+
 
 encode_cmd(heartbeat_req) ->                         16#01;
 encode_cmd(heartbeat_resp) ->                        16#02;

@@ -45,7 +45,6 @@
 %%% DAMAGE.
 
 -spec gen_uuid() -> uuid().
-
 gen_uuid() ->
     <<Rand1:48, _:4, Rand2:12, _:2, Rand3:62>> = crypto:rand_bytes(16),
     <<Rand1:48,
@@ -55,8 +54,7 @@ gen_uuid() ->
       Rand3:62>>.
 
 
--spec uuid_to_list(Value :: <<_:128>>) -> iolist().
-
+-spec uuid_to_list(Value :: uuid()) -> iolist().
 uuid_to_list(Value)
     when is_binary(Value), byte_size(Value) == 16 ->
     <<B1:32/unsigned-integer,
@@ -67,14 +65,12 @@ uuid_to_list(Value)
     [B1, B2, B3, B4, B5].
 
 
--spec uuid_to_string(Value :: <<_:128>>) -> string().
-
+-spec uuid_to_string(Value :: uuid) -> string().
 uuid_to_string(Value) ->
     uuid_to_string(Value, standard).
 
 
--spec uuid_to_string(Value :: <<_:128>>, 'standard' | 'nodash') -> string().
-
+-spec uuid_to_string(Value :: uuid, 'standard' | 'nodash') -> string().
 uuid_to_string(Value, standard) ->
     [B1, B2, B3, B4, B5] = uuid_to_list(Value),
     lists:flatten(io_lib:format("~8.16.0b-~4.16.0b-~4.16.0b-~4.16.0b-~12.16.0b",
@@ -87,20 +83,17 @@ uuid_to_string(Value, nodash) ->
 
 
 -spec parse_ip(Value :: binary() | string()) -> inet:ip_address().
-
 parse_ip(Bin) when is_binary(Bin) -> parse_ip(binary_to_list(Bin));
 parse_ip(String)                  -> {ok, Addr} = inet:parse_address(String), Addr.
 
 
 -spec shuffle(List :: [T]) -> [T].
-
 shuffle(L) when is_list(L) ->
-  [X || {_, X} <- lists:sort([{random:uniform(), Y} || Y <- L])].
+    [X || {_, X} <- lists:sort([{random:uniform(), Y} || Y <- L])].
 
 
--spec resolved_event(Kind :: 'stream' | 'all',
-                     Event :: #resolvedevent{} | #resolvedindexedevent{}) ->
-    {event, #event{}, non_neg_integer() | {tfpos, non_neg_integer(), non_neg_integer()}}.
+-spec resolved_event('all', #resolvedevent{})                             -> {'event', #event{}, tfpos()};
+                    ('stream', #resolvedevent{} | #resolvedindexedevent{}) -> {'event', #event{}, event_num()}.
 
 resolved_event(all, E = #resolvedevent{}) ->
     ResolvedEvent = event_rec(E#resolvedevent.event),
@@ -126,7 +119,6 @@ resolved_event(stream, E = #resolvedindexedevent{}) ->
     {event, ResolvedEvent, OrigEventNumber}.
 
 -spec event_rec(EventRecord :: #eventrecord{}) -> #event{}.
-
 event_rec(E = #eventrecord{}) ->
     #event{stream_id    = list_to_binary(E#eventrecord.event_stream_id),
            event_number = E#eventrecord.event_number,

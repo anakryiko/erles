@@ -285,7 +285,7 @@ create_package(CorrId, Auth, read_event, {StreamId, EventNumber, ResolveLinks, R
         require_master = RequireMaster
     },
     Bin = erles_clientapi_pb:encode_readevent(Dto),
-    erles_pkg:create(read_event, <<1:128>>, Auth, Bin);
+    erles_pkg:create(read_event, CorrId, Auth, Bin);
 
 create_package(CorrId, Auth, read_stream_events_forward, {StreamId, FromEventNumber, MaxCount, ResolveLinks, RequireMaster}) ->
     Dto = #readstreamevents{

@@ -1,4 +1,3 @@
 1. Test everything.
 2. Fix indentation after rename.
-3. Move constants into erlesque_internal.hrl.
-4. Specify types for Dialyzer.
+3. Specify types for Dialyzer.
