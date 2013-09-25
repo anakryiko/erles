@@ -38,7 +38,6 @@ init(State=#state{}) ->
 
 handle_call(stop, _From, State) ->
     close_tcp(State, conn_closed),
-    State#state.esq_pid ! {closed, closed_by_client},
     {stop, normal, ok, State};
 
 
@@ -116,7 +115,7 @@ handle_info({tcp_closed, _Socket}, State) ->
 
 handle_info({tcp_error, Socket, Reason}, State = #state{socket=Socket}) ->
     State#state.esq_pid ! {closed, {tcp_error, Reason}},
-    {stop, normal, State};
+    {stop, {tcp_error, Reason}, State};
 
 handle_info({tcp_error, _Socket, _Reason}, State) ->
     {noreply, State};
@@ -126,100 +125,13 @@ handle_info(Msg, State) ->
     {noreply, State}.
 
 
-terminate(normal, _State) ->
+terminate(_Reason, _State) ->
+    io:format("erles_conn terminted: ~p~n", [_Reason]),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-
-establish_connection(State, ConnType, Destination, FailedEndpoint) ->
-    io:format("Establishing connection to ~p.~n", [Destination]),
-    case connect(State, ConnType, Destination, FailedEndpoint) of
-        {ok, NewState} ->
-            NewState#state.esq_pid ! {connected, NewState#state.cur_endpoint},
-            NewState2 = start_heartbeat(NewState),
-            {noreply, NewState2};
-        {error, Reason} ->
-            State#state.esq_pid ! {closed, Reason},
-            {stop, normal, State}
-    end.
-
-
-connect(State, ConnType, {dns, ClusterDns, ManagerPort}, none) ->
-    io:format("Resolving DNS entry '~p', manager port ~p.~n", [ClusterDns, ManagerPort]),
-    DnsTimeout = State#state.settings#conn_settings.dns_timeout,
-    case inet:getaddrs(ClusterDns, inet, DnsTimeout) of
-        {ok, []} ->
-            io:format("DNS lookup of '~p' returned empty list of addresses.~n", [ClusterDns]),
-            {error, {dns_lookup_failed, empty_addr_list}};
-        {ok, Addrs} ->
-            io:format("DNS entry '~p' resolved into ~p.~n", [ClusterDns, Addrs]),
-            SeedNodes = [{Ip, ManagerPort} || Ip <- Addrs],
-            connect(State, ConnType, {cluster, SeedNodes}, none);
-        {error, Reason} ->
-            io:format("DNS lookup of '~p' failed, reason: ~p.~n", [ClusterDns, Reason]),
-            {error, {dns_lookup_failed, Reason}}
-    end;
-
-connect(State, ConnType, {cluster, SeedNodes}, none) ->
-    io:format("Connecting to cluster of nodes ~p.~n", [SeedNodes]),
-    Nodes = [#node{state=manager,
-                   tcp_ip=none,
-                   tcp_port=none,
-                   http_ip=Ip,
-                   http_port=Port} || {Ip, Port} <- SeedNodes],
-    connect(State, ConnType, {gossip, Nodes}, none);
-
-connect(State, ConnType, {gossip, Nodes}, FailedEndpoint) ->
-    io:format("Connecting to cluster of gossip nodes ~p.~n", [Nodes]),
-    S = State#state.settings,
-    Attempts = S#conn_settings.max_discover_retries + 1,
-    case discover_best_endpoint(Attempts, S, Nodes, FailedEndpoint) of
-        {ok, {Ip, Port}, Gossip} ->
-            NewState = State#state{destination={gossip, Gossip}},
-            connect(NewState, ConnType, {node, Ip, Port}, none);
-        {error, Reason} ->
-            {error, Reason}
-    end;
-
-connect(State, ConnType, {node, Ip, Port}, _FailedEndpoint) ->
-    S = State#state.settings,
-    Attempts = S#conn_settings.max_conn_retries + 1,
-    case connect_direct(ConnType, Attempts, S, Ip, Port) of
-        {ok, {Socket, _WorkerPid, Ip, Port}} ->
-            {ok, State#state{socket=Socket, cur_endpoint={Ip, Port}}};
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-
-connect_direct(_ConnType, 0, _S, _Ip, _Port) ->
-    {error, reconnection_limit};
-
-connect_direct(ConnType, AttemptsLeft, S, Ip, Port)
-        when AttemptsLeft > 0 ->
-    case ConnType of
-        connect ->
-            io:format("Connecting to [~p:~p]...~n", [Ip, Port]);
-        switch ->
-            io:format("Switching to [~p:~p]...~n", [Ip, Port]);
-        reconnect ->
-            timer:sleep(S#conn_settings.reconn_delay),
-            io:format("Reconnecting to [~p:~p]...~n", [Ip, Port])
-    end,
-    %% ES prefix length is little-endian, but unfortunately Erlang supports only
-    %% big-endianness so we have to do framing explicitly
-    case gen_tcp:connect(Ip, Port, [binary, {active, false}], S#conn_settings.conn_timeout) of
-        {ok, Socket} ->
-            io:format("Connection to [~p:~p] established.~n", [Ip, Port]),
-            Pid = self(),
-            WorkerPid = spawn_link(fun() -> receive_loop(Pid, Socket) end),
-            {ok, {Socket, WorkerPid, Ip, Port}};
-        {error, Reason} ->
-            io:format("Connection to [~p:~p] failed. Reason: ~p.~n", [Ip, Port, Reason]),
-            connect_direct(reconnect, AttemptsLeft-1, S, Ip, Port)
-    end.
 
 close_tcp(#state{socket=none}, _Reason) ->
     ok;
@@ -265,57 +177,147 @@ receive_loop(Pid, Socket) ->
     end.
 
 
-discover_best_endpoint(0, _S, _SeedNodes, _Failed) ->
-    {error, endpoint_discovery_failed};
-
-discover_best_endpoint(AttemptsLeft, S, SeedNodes, {Ip, Port}) when AttemptsLeft > 0 ->
-    NotFailedPred = fun(N) -> N#node.tcp_ip =/= Ip orelse N#node.tcp_port =/= Port end,
-    NotFailedNodes = lists:filter(NotFailedPred, SeedNodes),
-    discover_best_endpoint(AttemptsLeft, S, NotFailedNodes, none);
-
-discover_best_endpoint(AttemptsLeft, S, SeedNodes, none) when AttemptsLeft > 0 ->
-    Seeds = arrange_gossip_candidates(SeedNodes),
-    case get_gossip(Seeds, S#conn_settings.gossip_timeout) of
-        {ok, Winner, Members} ->
-            {ok, Winner, Members};
-        {error, _Reason} ->
-            case AttemptsLeft > 1 of
-                true -> timer:sleep(S#conn_settings.discover_delay);
-                false -> ok
-            end,
-            discover_best_endpoint(AttemptsLeft-1, S, Seeds, none)
+establish_connection(State, ConnType, Destination, FailedEndpoint) ->
+    io:format("Establishing connection to ~p.~n", [Destination]),
+    S = State#state.settings,
+    Attempts = S#conn_settings.max_conn_retries + 1,
+    case connect(State, ConnType, Destination, FailedEndpoint, Attempts) of
+        {ok, NewState} ->
+            NewState#state.esq_pid ! {connected, NewState#state.cur_endpoint},
+            NewState2 = start_heartbeat(NewState),
+            {noreply, NewState2};
+        {error, Reason} ->
+            State#state.esq_pid ! {closed, {connect_failed, Reason}},
+            {stop, {connect_failed, Reason}, State}
     end.
 
+
+connect(_State, _ConnType, _Destination, _FailedEndpoint, 0) ->
+    {error, reconnection_limit};
+
+connect(State, ConnType, {dns, ClusterDns, ManagerPort}, none, Attempts)
+        when is_binary(ClusterDns) ->
+    connect(State, ConnType, {dns, binary_to_list(ClusterDns), ManagerPort}, none, Attempts);
+
+connect(State, ConnType, {dns, ClusterDns, ManagerPort}, none, Attempts) ->
+    io:format("Connecting to ~p.~n", [{dns, ClusterDns, ManagerPort}]),
+    DnsTimeout = State#state.settings#conn_settings.dns_timeout,
+    case inet:getaddrs(ClusterDns, inet, DnsTimeout) of
+        {ok, []} ->
+            io:format("DNS lookup of '~p' returned empty list of addresses.~n", [ClusterDns]),
+            {error, {dns_lookup_failed, empty_addr_list}};
+        {ok, Addrs} ->
+            io:format("DNS entry '~p' resolved into ~p.~n", [ClusterDns, Addrs]),
+            SeedNodes = [{Ip, ManagerPort} || Ip <- Addrs],
+            connect(State, ConnType, {cluster, SeedNodes}, none, Attempts);
+        {error, Reason} ->
+            io:format("DNS lookup of '~p' failed, reason: ~p.~n", [ClusterDns, Reason]),
+            {error, {dns_lookup_failed, Reason}}
+    end;
+
+connect(State, ConnType, {cluster, SeedNodes}, none, Attempts) ->
+    io:format("Connecting to ~p.~n", [{cluster, SeedNodes}]),
+    Nodes = [#node{state=manager,
+                   tcp_ip=none,
+                   tcp_port=none,
+                   http_ip=Ip,
+                   http_port=Port} || {Ip, Port} <- SeedNodes],
+    NewState = State#state{destination={gossip, Nodes}},
+    connect(NewState, ConnType, {gossip, Nodes}, none, Attempts);
+
+connect(State, ConnType, Dest={gossip, Nodes}, FailedEndpoint, Attempts) ->
+    delay_connect_if_necessary(State#state.settings, ConnType, Dest),
+    case discover_best_endpoint(State#state.settings, Nodes, FailedEndpoint) of
+        {ok, {Ip, Port}, Gossip} ->
+            io:format("connect discovered best node ~p.~n", [{Ip, Port}]),
+            NewState = State#state{destination={gossip, Gossip}},
+            connect(NewState, ConnType, {node, Ip, Port}, none, Attempts);
+        {error, Reason} ->
+            io:format("connect discovering endpoint FAILED: ~p.~n", [Reason]),
+            connect(State, reconnect, State#state.destination, none, Attempts-1)
+    end;
+
+connect(State, ConnType, Dest={node, Ip, Port}, _FailedEndpoint, Attempts) ->
+    S = State#state.settings,
+    delay_connect_if_necessary(S, ConnType, Dest),
+    %% ES prefix length is little-endian, but unfortunately Erlang supports only
+    %% big-endianness so we have to do framing explicitly
+    case gen_tcp:connect(Ip, Port, [binary, {active, false}], S#conn_settings.conn_timeout) of
+        {ok, Socket} ->
+            io:format("Connection to [~p:~p] established.~n", [Ip, Port]),
+            Pid = self(),
+            _WorkerPid = spawn_link(fun() -> receive_loop(Pid, Socket) end),
+            {ok, State#state{socket=Socket, cur_endpoint={Ip, Port}}};
+        {error, Reason} ->
+            io:format("Connection to [~p:~p] failed. Reason: ~p.~n", [Ip, Port, Reason]),
+            connect(State, reconnect, State#state.destination, {Ip, Port}, Attempts-1)
+    end.
+
+
+delay_connect_if_necessary(S, ConnType, Destination) ->
+    case ConnType of
+        connect ->
+            io:format("Connecting to ~p.~n", [Destination]);
+        switch ->
+            io:format("Switching to ~p.~n", [Destination]);
+        reconnect ->
+            timer:sleep(S#conn_settings.reconn_delay),
+            io:format("Reconnecting to ~p.~n", [Destination])
+    end.
+
+
+discover_best_endpoint(S, SeedNodes, {Ip, Port}) ->
+    NotFailedPred = fun(N) -> N#node.tcp_ip =/= Ip orelse N#node.tcp_port =/= Port end,
+    NotFailedNodes = lists:filter(NotFailedPred, SeedNodes),
+    io:format("discover_best_endpoint NotFailedNodes:~n~p~n", [NotFailedNodes]),
+    discover_best_endpoint(S, NotFailedNodes, none);
+
+discover_best_endpoint(S, SeedNodes, none) ->
+    Seeds = arrange_gossip_candidates(SeedNodes),
+    io:format("discover_best_endpoint ArrangedSeeds:~n~p~n", [Seeds]),
+    case get_gossip(Seeds, S#conn_settings.gossip_timeout) of
+        {ok, Winner, Members} -> {ok, Winner, Members};
+        {error, Reason}       -> {error, Reason}
+    end.
+
+
 arrange_gossip_candidates(Candidates) when is_list(Candidates) ->
-    {Managers, Nodes} = lists:partition(fun(N) -> N#node.state =:= manager end, Candidates),
+    {Nodes, Managers} = lists:partition(fun(N) -> N#node.state =/= manager end, Candidates),
     All = erles_utils:shuffle(Nodes) ++ erles_utils:shuffle(Managers),
     [{N#node.http_ip, N#node.http_port} || N <- All].
+
 
 get_gossip([], _Timeout) -> {error, no_more_seeds};
 
 get_gossip([{Ip, Port} | SeedNodesTail], Timeout) ->
     case get_gossip(Ip, Port, Timeout) of
-        {ok, []}         -> get_gossip(SeedNodesTail, Timeout);
+        {ok, []}         ->
+            io:format("get_gossip Members: EMPTY~n"),
+            get_gossip(SeedNodesTail, Timeout);
         {ok, Members}    ->
-            io:format("Members: ~p~n", [Members]),
+            io:format("get_gossip Members: ~p~n", [Members]),
             Ranked = lists:sort(fun(X, Y) -> rank_state(X#node.state) =< rank_state(Y#node.state) end,
                                 [M || M <- Members, rank_state(M#node.state) > 0]),
-            io:format("Ranked: ~p~n", [Ranked]),
+            io:format("get_gossip Ranked: ~p~n", [Ranked]),
             case Ranked of
                 []           -> get_gossip(SeedNodesTail, Timeout);
                 [N | _Other] -> {ok, {N#node.tcp_ip, N#node.tcp_port}, Members}
             end;
-        {error, _Reason} -> get_gossip(SeedNodesTail, Timeout)
+        {error, _Reason} ->
+            io:format("get_gossip FAILED: ~p~n", [_Reason]),
+            get_gossip(SeedNodesTail, Timeout)
     end.
 
 
-get_gossip(_Ip={I1, I2, I3, I4}, Port, Timeout) ->
-    Url = lists:flatten(io_lib:format("http://~B.~B.~B.~B:~B/gossip?format=json", [I1, I2, I3, I4, Port])),
+get_gossip(Ip, Port, Timeout) ->
+    Url = lists:flatten(io_lib:format("http://~s:~B/gossip?format=json", [inet_parse:ntoa(Ip), Port])),
+    io:format("Getting gossip from ~p~n", [Url]),
     case httpc:request(get, {Url, []}, [{timeout, Timeout}], [{body_format, binary}]) of
         {ok, {{_Version, 200, _StatusDesc}, _Headers, Data}} ->
             Json = jsx:decode(Data),
             JsonMembers = proplists:get_value(<<"members">>, Json),
             AllMembers = [get_member(M) || M <- JsonMembers],
+            io:format("got_gossip ~p~n", [AllMembers]),
             {ok, [Node || {Alive, Node} <- AllMembers, Alive]};
         {ok, {{_Version, StatusCode, StatusDesc}, _Headers, _Data}} ->
             {error, {http_error, StatusCode, StatusDesc}};

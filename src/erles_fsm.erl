@@ -162,7 +162,10 @@ handle_info(Msg, StateName, State) ->
 
 
 terminate(normal, _StateName, _State) ->
-    io:format("erles connection terminated!~n"),
+    io:format("Erles connection terminated cleanly!~n"),
+    ok;
+terminate(Reason, _StateName, _State) ->
+    io:format("Erles connection terminated because of ~p!~n", [Reason]),
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -237,17 +240,13 @@ get_connection_settings(Options) ->
     HeartbeatTimeout   = get_opt(Options, heartbeat_timeout,    ?DEF_HEARTBEAT_TIMEOUT, positive),
     DnsTimeout         = get_opt(Options, dns_timeout,          ?DEF_DNS_TIMEOUT, positive),
     GossipTimeout      = get_opt(Options, gossip_timeout,       ?DEF_GOSSIP_TIMEOUT, positive),
-    DiscoverDelay      = get_opt(Options, discover_delay,       ?DEF_DISCOVER_DELAY, non_neg),
-    MaxDiscoverRetries = get_opt(Options, max_discover_retries, ?DEF_MAX_DISCOVER_RETRIES, non_neg),
     #conn_settings{conn_timeout=ConnTimeout,
                    reconn_delay=ReconnDelay,
                    max_conn_retries=MaxConnRetries,
                    heartbeat_period=HeartbeatPeriod,
                    heartbeat_timeout=HeartbeatTimeout,
                    dns_timeout=DnsTimeout,
-                   gossip_timeout=GossipTimeout,
-                   discover_delay=DiscoverDelay,
-                   max_discover_retries=MaxDiscoverRetries}.
+                   gossip_timeout=GossipTimeout}.
 
 get_opt(Options, Key, Default, positive) ->
     case proplists:lookup(Key, Options) of

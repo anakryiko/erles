@@ -92,7 +92,7 @@ shuffle(L) when is_list(L) ->
     [X || {_, X} <- lists:sort([{random:uniform(), Y} || Y <- L])].
 
 
--spec resolved_event('all', #resolvedevent{})                             -> {'event', #event{}, tfpos()};
+-spec resolved_event('all', #resolvedevent{})                              -> {'event', #event{}, tfpos()};
                     ('stream', #resolvedevent{} | #resolvedindexedevent{}) -> {'event', #event{}, event_num()}.
 
 resolved_event(all, E = #resolvedevent{}) ->

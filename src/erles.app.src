@@ -1,8 +1,7 @@
 {application, erles, [
     {description, "EventStore client for Erlang."},
-    {vsn, "0.1.0"},
-    {modules, [erles]},
+    {vsn, "0.0.0"},
     {registered, []},
-    {env, []},
-    {applications, [kernel, stdlib, inets]}
+    {applications, [kernel, stdlib, crypto, inets, jsx, protobuffs]},
+    {env, []}
 ]}.

@@ -1,3 +1,4 @@
 1. Test everything.
 2. Fix indentation after rename.
 3. Specify types for Dialyzer.
+4. Integrate with Travis.

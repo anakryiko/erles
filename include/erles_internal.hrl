@@ -18,8 +18,6 @@
 %% CLUSTER DEFAULTS
 -define(DEF_DNS_TIMEOUT, 2000).
 -define(DEF_GOSSIP_TIMEOUT, 1000).
--define(DEF_DISCOVER_DELAY, 200).
--define(DEF_MAX_DISCOVER_RETRIES, 10).
 
 %% OPERATIONS DEFAULTS
 -define(DEF_MAX_SERVER_OPS, 2000).
@@ -59,9 +57,7 @@
                         heartbeat_period,
                         heartbeat_timeout,
                         dns_timeout,
-                        gossip_timeout,
-                        discover_delay,
-                        max_discover_retries}).
+                        gossip_timeout}).
 
 %% REQUEST COMMON PARAMS
 -record(sys_params, {corr_id,

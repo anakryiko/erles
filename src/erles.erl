@@ -1,4 +1,6 @@
 -module(erles).
+
+-export([start/0]).
 -export([connect/2, connect/3, close/1]).
 -export([ping/1]).
 
@@ -20,14 +22,20 @@
 -include("erles.hrl").
 -include("erles_internal.hrl").
 
+%% Use this function when working with Erles from REPL to start all dependencies
+start() ->
+    application:load(erles),
+    {ok, Apps} = application:get_key(erles, applications),
+    lists:foreach(fun(App) -> application:start(App) end, Apps),
+    application:start(erles).
 
-%%% CONNECT
+%% CONNECT
 connect(node, {Ip, Port})
         when is_integer(Port), Port > 0, Port < 65536 ->
     erles_fsm:start_link({node, Ip, Port});
 
 connect(dns, {ClusterDns, ManagerPort})
-        when is_list(ClusterDns),
+        when is_list(ClusterDns) orelse is_binary(ClusterDns),
              is_integer(ManagerPort), ManagerPort > 0, ManagerPort < 65536 ->
     erles_fsm:start_link({dns, ClusterDns, ManagerPort});
 
@@ -42,7 +50,7 @@ connect(node, {Ip, Port}, Options)
     erles_fsm:start_link({node, Ip, Port}, Options);
 
 connect(dns, {ClusterDns, ManagerPort}, Options)
-        when is_list(ClusterDns),
+        when is_list(ClusterDns) orelse is_binary(ClusterDns),
              is_integer(ManagerPort), ManagerPort > 0, ManagerPort < 65536,
              is_list(Options) ->
     erles_fsm:start_link({dns, ClusterDns, ManagerPort}, Options);
@@ -52,17 +60,17 @@ connect(cluster, SeedNodes, Options)
              is_list(Options) ->
     erles_fsm:start_link({cluster, SeedNodes}, Options).
 
-%%% CLOSE
+%% CLOSE
 close(Pid) ->
     gen_fsm:sync_send_all_state_event(Pid, close).
 
 
-%%% PING
+%% PING
 ping(Pid) ->
     gen_fsm:sync_send_event(Pid, {op, {ping, temp, noauth}, {}}, infinity).
 
 
-%%% APPEND EVENTS TO STREAM
+%% APPEND EVENTS TO STREAM
 append(Pid, StreamId, ExpectedVersion, Events) ->
     append(Pid, StreamId, ExpectedVersion, Events, []).
 
@@ -83,7 +91,7 @@ append(Pid, StreamId, ExpectedVersion, Events, Auth, RequireMaster)
                             {op, {write_events, temp, Auth},
                                  {StreamId, ExpectedVersion, Events, RequireMaster}}, infinity).
 
-%%% START EXPLICIT TRANSACTION
+%% START EXPLICIT TRANSACTION
 transaction_start(Pid, StreamId, ExpectedVersion) ->
     transaction_start(Pid, StreamId, ExpectedVersion, []).
 
@@ -103,7 +111,7 @@ transaction_start(Pid, StreamId, ExpectedVersion, Auth, RequireMaster)
                                       {StreamId, ExpectedVersion, RequireMaster}}, infinity).
 
 
-%%% WRITE EVENTS IN EXPLICIT TRANSACTION
+%% WRITE EVENTS IN EXPLICIT TRANSACTION
 transaction_write(Pid, TransactionId, Events) ->
     transaction_write(Pid, TransactionId, Events, []).
 
@@ -120,7 +128,7 @@ transaction_write(Pid, TransactionId, Events, Auth, RequireMaster)
                                       {TransactionId, Events, RequireMaster}}, infinity).
 
 
-%%% COMMIT EXPLICIT TRANSACTION
+%% COMMIT EXPLICIT TRANSACTION
 transaction_commit(Pid, TransactionId) ->
     transaction_commit(Pid, TransactionId, []).
 
@@ -136,7 +144,7 @@ transaction_commit(Pid, TransactionId, Auth, RequireMaster)
                                       {TransactionId, RequireMaster}}, infinity).
 
 
-%%% DELETE STREAM
+%% DELETE STREAM
 delete(Pid, StreamId, ExpectedVersion) ->
     delete(Pid, StreamId, ExpectedVersion, []).
 
@@ -156,7 +164,7 @@ delete(Pid, StreamId, ExpectedVersion, Auth, RequireMaster)
                                       {StreamId, ExpectedVersion, RequireMaster}}, infinity).
 
 
-%%% READ SINGLE EVENT
+%% READ SINGLE EVENT
 read_event(Pid, StreamId, EventNumber) ->
     read_event(Pid, StreamId, EventNumber, []).
 
@@ -179,7 +187,7 @@ read_event(Pid, StreamId, EventNumber, Auth, ResolveLinks, RequireMaster)
                                       {StreamId, EventNumber, ResolveLinks, RequireMaster}}, infinity).
 
 
-%%% READ STREAM OR ALL EVENTS
+%% READ STREAM OR ALL EVENTS
 read_stream(Pid, StreamId, From, MaxCount) ->
     read_stream(Pid, StreamId, From, MaxCount, forward, []).
 
@@ -235,7 +243,7 @@ stream_pos(_StreamId, last, backward)       -> ?LAST_EVENT_NUM;
 stream_pos(_StreamId, EventNumber, _Dir)    -> EventNumber.
 
 
-%%% PRIMITIVE SUBSCRIPTION
+%% PRIMITIVE SUBSCRIPTION
 subscribe(Pid, StreamId) ->
     subscribe(Pid, StreamId, []).
 
@@ -253,7 +261,7 @@ unsubscribe(SubscriptionPid) ->
     gen_fsm:send_event(SubscriptionPid, unsubscribe).
 
 
-%%% PERMANENT CATCH-UP SUBSCRIPTION
+%% PERMANENT CATCH-UP SUBSCRIPTION
 subscribe_perm(Pid, StreamId) ->
     subscribe_perm(Pid, StreamId, live, []).
 
@@ -271,7 +279,7 @@ unsubscribe_perm(SubscrPid) ->
     erles_perm_sub:stop(SubscrPid).
 
 
-%%% SET STREAM METADATA
+%% SET STREAM METADATA
 set_metadata(Pid, StreamId, ExpectedVersion, Meta) ->
     set_metadata(Pid, StreamId, ExpectedVersion, Meta, []).
 
@@ -323,7 +331,7 @@ meta_to_metajson(Value, JsonKey, MetaJson) ->
     [{JsonKey, Value} | MetaJson].
 
 
-%%% GET STREAM METADATA
+%% GET STREAM METADATA
 get_metadata(Pid, StreamId) ->
     get_metadata(Pid, StreamId, struct).
 
