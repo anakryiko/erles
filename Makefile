@@ -1,7 +1,7 @@
 REBAR=`which rebar || printf ./rebar`
 
 all:
-    get-deps proto compile
+    get-deps compile
 
 get-deps:
     @$(REBAR) get-deps
