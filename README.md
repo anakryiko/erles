@@ -81,13 +81,15 @@ You can establish connection in three different ways:
   - Connection to cluster of nodes. You specify a list of tuple with IP address and *HTTP* port of each node. Erles will automatically determine through Event Store's gossip protocol the best node to connect to.
 
 ```erlang
-  {ok, C} = erles:connect(cluster, [{{127,0,0,1}, 7777}, {{127,0,0,1}, 8888}, {{127,0,0,1}, 9999}]).
+  {ok, C} = erles:connect(cluster, [{{127,0,0,1}, 7777},
+                                    {{127,0,0,1}, 8888},
+                                    {{127,0,0,1}, 9999}]).
 ```
 
   - Connection to cluster through resolving specified DNS entry. You specify DNS name and HTTP port. Erles resolves DNS entry into a list of IP addresses and pairs IPs with provided HTTP port forming essentially same configuration that is used with `cluster` connection mode. This mode is intended to be used with Event Store's managers, though specifying HTTP port of cluster node is enough to function properly provided all machines have nodes with same HTTP port. Usage:
 
 ```erlang
-  {ok, C} = erles:connect(dns, [<<"demo.cluster.foo.com">>, 30778]).
+  {ok, C} = erles:connect(dns, {<<"demo.cluster.foo.com">>, 30778}).
 ```
 
 Writing events
