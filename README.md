@@ -1,6 +1,7 @@
 Erles - Erlang client for [Event Store](http://geteventstore.com/)
 =====
 
+Erles is licensed under [The MIT License](http://opensource.org/licenses/MIT).
 Copyright © 2013 Andrii Nakryiko <andrii.nakryiko@gmail.com>
 
 Features
@@ -27,7 +28,3 @@ Supported operations:
   * `set_metadata/4`, `set_metadata/5`
   * `get_metadata/2`, `get_metadata/3`, `get_metadata/4`
 
-License
-=======
-
-Erles is licensed under The MIT License, see LICENSE file in repository.
