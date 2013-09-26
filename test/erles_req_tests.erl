@@ -60,7 +60,7 @@ append_expver(C) ->
     Stream = gen_stream_id(),
     [?_assertEqual({ok, 0}, erles:append(C, Stream, -1, [create_event()])),
      ?_assertEqual({ok, 1}, erles:append(C, Stream,  0, [create_event()])),
-     ?_assertEqual({error, wrong_expected_version},
+     ?_assertEqual({error, wrong_exp_ver},
                    erles:append(C, Stream, -1, [create_event()]))
     ].
 
@@ -238,7 +238,7 @@ metadata_raw_setting_empty_works(C) ->
 
 metadata_raw_setting_with_wrong_expver_fails(C) ->
     S = gen_stream_id(),
-    [?_assertEqual({error, wrong_expected_version}, erles:set_metadata(C, S, 1, <<>>)),
+    [?_assertEqual({error, wrong_exp_ver}, erles:set_metadata(C, S, 1, <<>>)),
      ?_assertEqual({ok, {meta, <<>>, -1}}, erles:get_metadata(C, S, raw))
     ].
 

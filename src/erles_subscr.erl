@@ -1,5 +1,6 @@
--module(erles_subs).
+-module(erles_subscr).
 
+-export([stop/1]).
 -export([init/1, handle_sync_event/4, handle_event/3, handle_info/3, code_change/4, terminate/3]).
 -export([disconnected/2, disconnected/3,
          pending/2, pending/3,
@@ -24,6 +25,10 @@
                 resolve_links,
                 sub_pid,
                 sub_mon_ref}).
+
+stop(Pid) ->
+    gen_fsm:sync_send_event(Pid, unsubscribe).
+
 
 init({subscribe_to_stream, S=#sys_params{}, {StreamId, ResolveLinks, SubPid}}) ->
     process_flag(trap_exit, true),
@@ -96,9 +101,9 @@ pending({pkg, Cmd, CorrId, _Auth, Data}, State=#state{corr_id=CorrId}) ->
         not_handled ->
             not_handled(Data, State);
         not_authenticated ->
-            complete(State, {not_authenticated, Data});
+            complete(State, {error, {not_authenticated, Data}});
         bad_request ->
-            complete(State, {bad_request, Data});
+            complete(State, {error, {bad_request, Data}});
         _ ->
             io:format("Unexpected command received: ~p, data: ~p.~n", [Cmd, Data]),
             {next_state, pending, State}
@@ -183,14 +188,15 @@ subscribed({subscriber_down, Reason}, State=#state{}) ->
     notify(State, {unsubscribed, {subscriber_down, Reason}}),
     complete(State);
 
-subscribed(unsubscribe, State) ->
-    issue_unsubscribe_request(State),
-    notify(State, {unsubscribed, requested_by_client}),
-    complete(State);
-
 subscribed(Msg, State) ->
     io:format("Unexpected ASYNC EVENT ~p, state name ~p, state data ~p~n", [Msg, subscribed, State]),
     {next_state, retry_pending, State}.
+
+subscribed(unsubscribe, From, State) ->
+    issue_unsubscribe_request(State),
+    notify(State, {unsubscribed, requested_by_client}),
+    gen_fsm:reply(From, ok),
+    complete(State);
 
 subscribed(Msg, From, State) ->
     io:format("Unexpected SYNC EVENT ~p from ~p, state name ~p, state data ~p~n", [Msg, From, subscribed, State]),

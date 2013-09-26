@@ -1,6 +1,6 @@
-Erles
+Erles - Erlang client for [Event Store](http://geteventstore.com/)
 =====
-Erles is a client for Event Store ([http://geteventstore.com/](http://geteventstore.com/)) written in Erlang.
+
 Copyright © 2013 Andrii Nakryiko <andrii.nakryiko@gmail.com>
 
 Features
@@ -12,9 +12,9 @@ and strives to be even more convenient to use thanks to dynamic nature of Erlang
 
 Supported operations:
 
-  * connect/2, connect/3
-  * close/1
-  * ping/1
+  * `connect/2`, `connect/3`
+  * `close/1`
+  * `ping/1`
   * append events to stream (`erles:append/4`, `erles:append/5`);
   * `transaction_start/3`, `transaction_start/4`
   * `transaction_write/3`, `transaction_write/4`

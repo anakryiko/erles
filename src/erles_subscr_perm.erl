@@ -1,4 +1,4 @@
--module(erles_perm_sub).
+-module(erles_subscr_perm).
 -behavior(gen_server).
 
 -export([start_link/7, stop/1]).

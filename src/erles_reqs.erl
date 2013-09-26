@@ -77,9 +77,9 @@ pending({pkg, Cmd, CorrId, _Auth, Data}, State=#state{corr_id=CorrId}) ->
         not_handled ->
             not_handled(Data, State);
         not_authenticated ->
-            complete(State, {not_authenticated, Data});
+            complete(State, {error, {not_authenticated, Data}});
         bad_request ->
-            complete(State, {bad_request, Data});
+            complete(State, {error, {bad_request, Data}});
         _ ->
             io:format("Unexpected command received: ~p, data: ~p.~n", [Cmd, Data]),
             {next_state, pending, State}
@@ -218,7 +218,7 @@ response_cmd(read_all_events_backward) ->    read_all_events_backward_completed.
 create_package(CorrId, Auth, ping, {}) ->
     erles_pkg:create(ping, CorrId, Auth, <<>>);
 
-create_package(CorrId, Auth, write_events, {StreamId, ExpectedVersion, Events, RequireMaster}) ->
+create_package(CorrId, Auth, write_events, {StreamId, ExpectedVersion, Events, MasterOnly}) ->
     Dto = #writeevents{
         event_stream_id = StreamId,
         expected_version = ExpectedVersion,
@@ -230,21 +230,21 @@ create_package(CorrId, Auth, write_events, {StreamId, ExpectedVersion, Events, R
                       data = X#event_data.data,
                       metadata = X#event_data.metadata}
         end, Events),
-        require_master = RequireMaster
+        require_master = MasterOnly
     },
     Bin = erles_clientapi_pb:encode_writeevents(Dto),
     erles_pkg:create(write_events, CorrId, Auth, Bin);
 
-create_package(CorrId, Auth, transaction_start, {StreamId, ExpectedVersion, RequireMaster}) ->
+create_package(CorrId, Auth, transaction_start, {StreamId, ExpectedVersion, MasterOnly}) ->
     Dto = #transactionstart{
         event_stream_id = StreamId,
         expected_version = ExpectedVersion,
-        require_master = RequireMaster
+        require_master = MasterOnly
     },
     Bin = erles_clientapi_pb:encode_transactionstart(Dto),
     erles_pkg:create(transaction_start, CorrId, Auth, Bin);
 
-create_package(CorrId, Auth, transaction_write, {TransactionId, Events, RequireMaster}) ->
+create_package(CorrId, Auth, transaction_write, {TransactionId, Events, MasterOnly}) ->
     Dto = #transactionwrite{
         transaction_id = TransactionId,
         events = lists:map(fun(X) ->
@@ -255,78 +255,78 @@ create_package(CorrId, Auth, transaction_write, {TransactionId, Events, RequireM
                       data = X#event_data.data,
                       metadata = X#event_data.metadata}
         end, Events),
-        require_master = RequireMaster
+        require_master = MasterOnly
     },
     Bin = erles_clientapi_pb:encode_transactionwrite(Dto),
     erles_pkg:create(transaction_write, CorrId, Auth, Bin);
 
-create_package(CorrId, Auth, transaction_commit, {TransactionId, RequireMaster}) ->
+create_package(CorrId, Auth, transaction_commit, {TransactionId, MasterOnly}) ->
     Dto = #transactioncommit{
         transaction_id = TransactionId,
-        require_master = RequireMaster
+        require_master = MasterOnly
     },
     Bin = erles_clientapi_pb:encode_transactioncommit(Dto),
     erles_pkg:create(transaction_commit, CorrId, Auth, Bin);
 
-create_package(CorrId, Auth, delete_stream, {StreamId, ExpectedVersion, RequireMaster}) ->
+create_package(CorrId, Auth, delete_stream, {StreamId, ExpectedVersion, MasterOnly}) ->
     Dto = #deletestream{
         event_stream_id = StreamId,
         expected_version = ExpectedVersion,
-        require_master = RequireMaster
+        require_master = MasterOnly
     },
     Bin = erles_clientapi_pb:encode_deletestream(Dto),
     erles_pkg:create(delete_stream, CorrId, Auth, Bin);
 
-create_package(CorrId, Auth, read_event, {StreamId, EventNumber, ResolveLinks, RequireMaster}) ->
+create_package(CorrId, Auth, read_event, {StreamId, EventNumber, ResolveLinks, MasterOnly}) ->
     Dto = #readevent{
         event_stream_id = StreamId,
         event_number = EventNumber,
         resolve_link_tos = ResolveLinks,
-        require_master = RequireMaster
+        require_master = MasterOnly
     },
     Bin = erles_clientapi_pb:encode_readevent(Dto),
     erles_pkg:create(read_event, CorrId, Auth, Bin);
 
-create_package(CorrId, Auth, read_stream_events_forward, {StreamId, FromEventNumber, MaxCount, ResolveLinks, RequireMaster}) ->
+create_package(CorrId, Auth, read_stream_events_forward, {StreamId, FromEventNumber, MaxCount, ResolveLinks, MasterOnly}) ->
     Dto = #readstreamevents{
         event_stream_id = StreamId,
         from_event_number = FromEventNumber,
         max_count = MaxCount,
         resolve_link_tos = ResolveLinks,
-        require_master = RequireMaster
+        require_master = MasterOnly
     },
     Bin = erles_clientapi_pb:encode_readstreamevents(Dto),
     erles_pkg:create(read_stream_events_forward, CorrId, Auth, Bin);
 
-create_package(CorrId, Auth, read_stream_events_backward, {StreamId, FromEventNumber, MaxCount, ResolveLinks, RequireMaster}) ->
+create_package(CorrId, Auth, read_stream_events_backward, {StreamId, FromEventNumber, MaxCount, ResolveLinks, MasterOnly}) ->
     Dto = #readstreamevents{
         event_stream_id = StreamId,
         from_event_number = FromEventNumber,
         max_count = MaxCount,
         resolve_link_tos = ResolveLinks,
-        require_master = RequireMaster
+        require_master = MasterOnly
     },
     Bin = erles_clientapi_pb:encode_readstreamevents(Dto),
     erles_pkg:create(read_stream_events_backward, CorrId, Auth, Bin);
 
-create_package(CorrId, Auth, read_all_events_forward, {{tfpos, CommitPos, PreparePos}, MaxCount, ResolveLinks, RequireMaster}) ->
+create_package(CorrId, Auth, read_all_events_forward, {{tfpos, CommitPos, PreparePos}, MaxCount, ResolveLinks, MasterOnly}) ->
     Dto = #readallevents{
         commit_position = CommitPos,
         prepare_position = PreparePos,
         max_count = MaxCount,
         resolve_link_tos = ResolveLinks,
-        require_master = RequireMaster
+        require_master = MasterOnly
     },
     Bin = erles_clientapi_pb:encode_readallevents(Dto),
     erles_pkg:create(read_all_events_forward, CorrId, Auth, Bin);
 
-create_package(CorrId, Auth, read_all_events_backward, {{tfpos, CommitPos, PreparePos}, MaxCount, ResolveLinks, RequireMaster}) ->
+create_package(CorrId, Auth, read_all_events_backward, {{tfpos, CommitPos, PreparePos}, MaxCount, ResolveLinks, MasterOnly}) ->
     Dto = #readallevents{
         commit_position = CommitPos,
         prepare_position = PreparePos,
         max_count = MaxCount,
         resolve_link_tos = ResolveLinks,
-        require_master = RequireMaster
+        require_master = MasterOnly
     },
     Bin = erles_clientapi_pb:encode_readallevents(Dto),
     erles_pkg:create(read_all_events_backward, CorrId, Auth, Bin).
@@ -397,7 +397,7 @@ decode_write_failure(OperationResult) ->
         'PrepareTimeout' ->       {retry, prepare_timeout};
         'CommitTimeout' ->        {retry, commit_timeout};
         'ForwardTimeout' ->       {retry, forward_timeout};
-        'WrongExpectedVersion' -> {complete, {error, wrong_expected_version}};
+        'WrongExpectedVersion' -> {complete, {error, wrong_exp_ver}};
         'StreamDeleted' ->        {complete, {error, stream_deleted}};
         'InvalidTransaction' ->   {complete, {error, invalid_transaction}};
         'AccessDenied' ->         {complete, {error, access_denied}}

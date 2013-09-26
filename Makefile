@@ -9,17 +9,15 @@ get-deps:
 proto:
     get-deps
     compile
-    cd deps/protobuffs/ebin
-    ../../../scripts/compile_proto.escript ../../../include/clientapi.proto ../../../src ../../../include/
-    cd ../../../
+    escript compile_clientapi_proto.escript
 
 compile:
     @$(REBAR) compile
 
 clean:
     @$(REBAR) clean
+
 ct:
-    ./scripts/generate_emakefile.escript
     @$(REBAR) skip_deps=true ct
 
 eunit:

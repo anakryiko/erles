@@ -3,9 +3,11 @@
 -export([parse_ip/1]).
 -export([shuffle/1]).
 -export([resolved_event/2]).
+-export([meta_to_metajson/1, metajson_to_meta/1]).
 
 -include("erles_clientapi_pb.hrl").
 -include("erles.hrl").
+-include("erles_internal.hrl").
 
 %%% UUID routines were taken from
 %%% https://github.com/okeuday/uuid/blob/master/src/uuid.erl
@@ -65,12 +67,12 @@ uuid_to_list(Value)
     [B1, B2, B3, B4, B5].
 
 
--spec uuid_to_string(Value :: uuid) -> string().
+-spec uuid_to_string(Value :: uuid()) -> string().
 uuid_to_string(Value) ->
     uuid_to_string(Value, standard).
 
 
--spec uuid_to_string(Value :: uuid, 'standard' | 'nodash') -> string().
+-spec uuid_to_string(Value :: uuid(), 'standard' | 'nodash') -> string().
 uuid_to_string(Value, standard) ->
     [B1, B2, B3, B4, B5] = uuid_to_list(Value),
     lists:flatten(io_lib:format("~8.16.0b-~4.16.0b-~4.16.0b-~4.16.0b-~12.16.0b",
@@ -92,8 +94,8 @@ shuffle(L) when is_list(L) ->
     [X || {_, X} <- lists:sort([{random:uniform(), Y} || Y <- L])].
 
 
--spec resolved_event('all', #resolvedevent{})                              -> {'event', #event{}, tfpos()};
-                    ('stream', #resolvedevent{} | #resolvedindexedevent{}) -> {'event', #event{}, event_num()}.
+-spec resolved_event('all', #resolvedevent{})                              -> all_event_res();
+                    ('stream', #resolvedevent{} | #resolvedindexedevent{}) -> stream_event_res().
 
 resolved_event(all, E = #resolvedevent{}) ->
     ResolvedEvent = event_rec(E#resolvedevent.event),
@@ -126,3 +128,74 @@ event_rec(E = #eventrecord{}) ->
            event_type   = list_to_binary(E#eventrecord.event_type),
            data         = E#eventrecord.data,
            metadata     = E#eventrecord.metadata}.
+
+-spec meta_to_metajson(stream_meta()) -> jsx:json_term().
+meta_to_metajson(Meta) ->
+    J1 = meta_to_metajson(Meta#stream_meta.custom, custom, []),
+    J2 = meta_to_metajson(Meta#stream_meta.acl, ?META_ACL, J1),
+    J3 = meta_to_metajson(Meta#stream_meta.cache_control, ?META_CACHECONTROL, J2),
+    J4 = meta_to_metajson(Meta#stream_meta.truncate_before, ?META_TRUNCATEBEFORE, J3),
+    J5 = meta_to_metajson(Meta#stream_meta.max_age, ?META_MAXAGE, J4),
+    J6 = meta_to_metajson(Meta#stream_meta.max_count, ?META_MAXCOUNT, J5),
+    case J6 of
+        [] -> [{}]; % JSX's notion of empty JSON object
+        NonEmptyJson -> NonEmptyJson
+    end.
+
+-spec meta_to_metajson(term(), 'custom' | binary(), jsx:json_term()) -> jsx:json_term().
+meta_to_metajson(undefined, _JsonKey, MetaJson) ->
+    MetaJson;
+
+meta_to_metajson(Acl=#stream_acl{}, JsonKey=?META_ACL, MetaJson) ->
+    J1 = meta_to_metajson(Acl#stream_acl.metawrite_roles, ?META_ACLMETAWRITE, []),
+    J2 = meta_to_metajson(Acl#stream_acl.metaread_roles, ?META_ACLMETAREAD, J1),
+    J3 = meta_to_metajson(Acl#stream_acl.delete_roles, ?META_ACLDELETE, J2),
+    J4 = meta_to_metajson(Acl#stream_acl.write_roles, ?META_ACLWRITE, J3),
+    J5 = meta_to_metajson(Acl#stream_acl.read_roles, ?META_ACLREAD, J4),
+    AclJson = case J5 of
+        [] -> [{}]; % JSX's notion of empty JSON object
+        NonEmptyJson -> NonEmptyJson
+    end,
+    [{JsonKey, AclJson} | MetaJson];
+
+meta_to_metajson(Values, custom, MetaJson) ->
+    Values ++ MetaJson;
+
+meta_to_metajson(Value, JsonKey, MetaJson) ->
+    [{JsonKey, Value} | MetaJson].
+
+
+-spec metajson_to_meta(jsx:json_term()) -> stream_meta().
+metajson_to_meta(MetaJson) ->
+    Meta = lists:foldl(fun metajson_keyval_to_meta/2, #stream_meta{}, MetaJson),
+    case Meta#stream_meta.custom of
+        undefined -> Meta;
+        List when is_list(List) -> Meta#stream_meta{custom=lists:reverse(List)}
+    end.
+
+-spec metajson_keyval_to_meta({} | {binary(), jsx:json_term()}, stream_meta()) -> stream_meta().
+metajson_keyval_to_meta({}, Meta)                            -> Meta;
+metajson_keyval_to_meta({?META_MAXCOUNT, Value}, Meta)       -> Meta#stream_meta{max_count=Value};
+metajson_keyval_to_meta({?META_MAXAGE, Value}, Meta)         -> Meta#stream_meta{max_age=Value};
+metajson_keyval_to_meta({?META_TRUNCATEBEFORE, Value}, Meta) -> Meta#stream_meta{truncate_before=Value};
+metajson_keyval_to_meta({?META_CACHECONTROL, Value}, Meta)   -> Meta#stream_meta{cache_control=Value};
+metajson_keyval_to_meta({?META_ACL, Value}, Meta)            -> Meta#stream_meta{acl=acljson_to_acl(Value)};
+metajson_keyval_to_meta({Custom, Value}, Meta=#stream_meta{custom=undefined}) -> Meta#stream_meta{custom=[{Custom, Value}]};
+metajson_keyval_to_meta({Custom, Value}, Meta=#stream_meta{custom=List})      -> Meta#stream_meta{custom=[{Custom, Value} | List]}.
+
+
+-spec acljson_to_acl(jsx:json_term()) -> stream_acl().
+acljson_to_acl(AclJson) -> lists:foldl(fun acljson_keyval_to_acl/2, #stream_acl{}, AclJson).
+
+-spec acljson_keyval_to_acl({} | {binary(), jsx:json_term()}, stream_acl()) -> stream_acl().
+acljson_keyval_to_acl({}, Acl)                          -> Acl;
+acljson_keyval_to_acl({?META_ACLREAD, Value}, Acl)      -> Acl#stream_acl{read_roles=canon_role(Value)};
+acljson_keyval_to_acl({?META_ACLWRITE, Value}, Acl)     -> Acl#stream_acl{write_roles=canon_role(Value)};
+acljson_keyval_to_acl({?META_ACLDELETE, Value}, Acl)    -> Acl#stream_acl{delete_roles=canon_role(Value)};
+acljson_keyval_to_acl({?META_ACLMETAREAD, Value}, Acl)  -> Acl#stream_acl{metaread_roles=canon_role(Value)};
+acljson_keyval_to_acl({?META_ACLMETAWRITE, Value}, Acl) -> Acl#stream_acl{metawrite_roles=canon_role(Value)}.
+
+-spec canon_role(binary()) -> [binary()];
+                ([T]) -> [T].
+canon_role(Role) when is_binary(Role) -> [Role]; % turn single role string into single element array
+canon_role(Roles) when is_list(Roles) -> Roles.

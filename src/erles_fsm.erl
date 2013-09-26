@@ -45,11 +45,12 @@ init({Destination, Options}) ->
     DefaultAuth  = case proplists:lookup(default_auth, Options) of
         none -> ?DEF_DEFAULT_AUTH;
         {_, {Login, Pass}} -> {Login, Pass};
+        {_, defauth} -> noauth;
         {_, noauth} -> noauth
     end,
     {ok, SupPid} = erles_ops_sup:start_link(),
-    ConnSettings = get_connection_settings(Options),
-    {ok, ConnPid} = erles_conn:start_link(self(), Destination, ConnSettings),
+    ConnOpts = get_connect_options(Options),
+    {ok, ConnPid} = erles_conn:start_link(self(), Destination, ConnOpts),
     erles_conn:connect(ConnPid),
     {ok, connecting, #state{sup_pid=SupPid,
                             conn_pid=ConnPid,
@@ -94,10 +95,10 @@ connected(Msg, State) ->
 
 handle_sync_event(close, _From, _StateName, State=#state{}) ->
     ok = erles_conn:stop(State#state.conn_pid),
-    io:format("Connection stopped. Reason: ~p.~n", [closed_by_client]),
+    io:format("Connection stopped. Reason: ~p.~n", [conn_stopped]),
     {NewActOps, NewWaitOps} = abort_operations(State#state.active_ops,
                                                State#state.waiting_ops,
-                                               closed_by_client),
+                                               conn_stopped),
     {stop, normal, ok, State#state{active_ops=NewActOps, waiting_ops=NewWaitOps}};
 
 handle_sync_event(Event, From, StateName, State) ->
@@ -231,7 +232,7 @@ abort_operations(ActiveOps, WaitingOps, Reason) ->
     lists:foldl(ReplyAbort, ok, queue:to_list(WaitingOps)),
     {ActiveOps, WaitingOps}.
 
-get_connection_settings(Options) ->
+get_connect_options(Options) ->
     %% CONNECTION SETTINGS
     ConnTimeout        = get_opt(Options, connection_timeout,   ?DEF_CONNECTION_TIMEOUT, positive),
     ReconnDelay        = get_opt(Options, reconnection_delay,   ?DEF_RECONNECTION_DELAY, non_neg),

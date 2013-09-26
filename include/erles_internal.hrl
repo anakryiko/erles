@@ -6,7 +6,7 @@
 %% COMMON REQUEST DEFAULTS
 -define(DEF_AUTH, defauth).
 -define(DEF_RESOLVE, true).
--define(DEF_REQ_MASTER, true).
+-define(DEF_MASTER_ONLY, true).
 
 %% CONNECTION DEFAULTS
 -define(DEF_CONNECTION_TIMEOUT, 2000).
