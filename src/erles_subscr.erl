@@ -217,6 +217,7 @@ handle_info(Msg, StateName, State) ->
 
 
 terminate(normal, _StateName, _State) ->
+    io:format("Subscription is terminated in state ~p, pid ~p~n", [_StateName, self()]),
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
