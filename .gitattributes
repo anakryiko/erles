@@ -1,0 +1,11 @@
+# Auto detect text files and perform LF normalization
+*        text=auto
+
+*.c       text
+*.h       text
+*.erl     text
+*.hrl     text
+*.escript text
+*.config  text
+*.proto   text
+*.cmd     text

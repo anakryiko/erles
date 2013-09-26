@@ -1,0 +1,13 @@
+[patterns]
+** = native
+
+rebar = BIN
+
+**.c       = native
+**.h       = native
+**.erl     = native
+**.hrl     = native
+**.escript = native
+**.config  = native
+**.proto   = native
+**.cmd     = native

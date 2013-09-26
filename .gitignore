@@ -1,0 +1,6 @@
+.eunit
+deps/*
+ebin/*
+*.sublime-project
+*.sublime-workspace
+*.beam
