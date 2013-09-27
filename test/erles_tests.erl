@@ -10,17 +10,28 @@
 erles_test_() ->
     [
      {foreach, fun setup/0, fun teardown/1,
-      [{with, [T]} || T <- [fun append_any/1,
-                            fun append_expver/1,
-                            fun append_empty/1,
-                            fun delete_expver/1,
-                            fun delete_any/1,
+      [{with, [T]} || T <- [fun append_any_works_always/1,
+                            fun append_expver_works_if_correct/1,
+                            fun append_empty_works/1,
+                            fun perm_delete_expver_works/1,
+                            fun perm_delete_any/1,
+                            fun soft_delete_expver_works/1,
+                            fun soft_delete_any/1,
                             fun transaction_expver/1,
                             fun transaction_any/1,
                             fun transaction_empty/1,
                             fun read_event/1,
                             fun read_stream/1,
-                            fun subscriptions/1,
+                            fun prim_subscriptions/1,
+                            fun perm_subscription/1,
+                            fun append_security_works/1,
+                            fun transaction_start_security_works/1,
+                            fun transaction_commit_security_works/1,
+                            fun delete_security_works/1,
+                            fun read_event_security_works/1,
+                            fun read_stream_security_works/1,
+                            fun read_all_security_works/1,
+                            fun subscription_security_works/1,
                             fun metadata_raw_get_set_works/1,
                             fun metadata_raw_get_unexisting/1,
                             fun metadata_raw_setting_empty_works/1,
@@ -37,8 +48,9 @@ erles_test_() ->
                             fun metadata_struct_set_struct_read_raw/1,
                             fun metadata_struct_set_empty_acl_works/1
                          ]] ++ [
-                            fun read_all_forward/1,
-                            fun read_all_backward/1]}
+                            %fun read_all_forward/1,
+                            %fun read_all_backward/1
+                         ]}
     ].
 
 setup() ->
@@ -49,54 +61,68 @@ setup() ->
 teardown(C) ->
     ok = erles:close(C).
 
-append_any(C) ->
+append_any_works_always(C) ->
     Stream = gen_stream_id(),
     ?assertEqual({ok, 0}, erles:append(C, Stream, any, [create_event()])),
     ?assertEqual({ok, 1}, erles:append(C, Stream, -2, [create_event()])).
 
-append_expver(C) ->
+append_expver_works_if_correct(C) ->
     Stream = gen_stream_id(),
     ?assertEqual({ok, 0}, erles:append(C, Stream, -1, [create_event()])),
     ?assertEqual({ok, 1}, erles:append(C, Stream,  0, [create_event()])),
     ?assertEqual({error, wrong_exp_ver}, erles:append(C, Stream, -1, [create_event()])).
 
-append_empty(C) ->
+append_empty_works(C) ->
     Stream = gen_stream_id(),
     ?assertEqual({ok, -1}, erles:append(C, Stream, any, [])),
     ?assertEqual({ok, -1}, erles:append(C, Stream, -1, [])).
 
-delete_any(C) ->
+perm_delete_any(C) ->
+    Stream = gen_stream_id(),
+    {ok, _} = erles:append(C, Stream, any, [create_event(), create_event()]),
+    ?assertEqual(ok, erles:delete(C, Stream, any, perm)),
+    ?assertEqual({error, stream_deleted}, erles:read_event(C, Stream, last)).
+
+perm_delete_expver_works(C) ->
+    Stream = gen_stream_id(),
+    {ok, NextExpVer} = erles:append(C, Stream, any, [create_event(), create_event()]),
+    ?assertEqual({error, wrong_exp_ver}, erles:delete(C, Stream, -1, perm)),
+    ?assertEqual(ok, erles:delete(C, Stream, NextExpVer, perm)),
+    ?assertEqual({error, stream_deleted}, erles:read_event(C, Stream, last)).
+
+soft_delete_any(C) ->
     Stream = gen_stream_id(),
     {ok, _} = erles:append(C, Stream, any, [create_event(), create_event()]),
     ?assertEqual(ok, erles:delete(C, Stream, any)),
-    ?assertEqual({error, stream_deleted}, erles:read_event(C, Stream, last)).
+    ?assertEqual({error, no_stream}, erles:read_event(C, Stream, last)).
 
-delete_expver(C) ->
+soft_delete_expver_works(C) ->
     Stream = gen_stream_id(),
     {ok, NextExpVer} = erles:append(C, Stream, any, [create_event(), create_event()]),
+    ?assertEqual({error, wrong_exp_ver}, erles:delete(C, Stream, -1)),
     ?assertEqual(ok, erles:delete(C, Stream, NextExpVer)),
-    ?assertEqual({error, stream_deleted}, erles:read_event(C, Stream, last)).
+    ?assertEqual({error, no_stream}, erles:read_event(C, Stream, last)).
 
 transaction_expver(C) ->
     Stream = gen_stream_id(),
-    {ok, Tid} = erles:transaction_start(C, Stream, -1),
-    ?assertEqual(ok, erles:transaction_write(C, Tid, [create_event(), create_event()])),
-    ?assertEqual(ok, erles:transaction_write(C, Tid, [create_event()])),
-    ?assertEqual(ok, erles:transaction_write(C, Tid, [])),
-    ?assertEqual({ok, 2}, erles:transaction_commit(C, Tid)).
+    {ok, Tid} = erles:txn_start(C, Stream, -1),
+    ?assertEqual(ok, erles:txn_append(C, Tid, [create_event(), create_event()])),
+    ?assertEqual(ok, erles:txn_append(C, Tid, [create_event()])),
+    ?assertEqual(ok, erles:txn_append(C, Tid, [])),
+    ?assertEqual({ok, 2}, erles:txn_commit(C, Tid)).
 
 transaction_any(C) ->
     Stream = gen_stream_id(),
-    {ok, Tid} = erles:transaction_start(C, Stream, any),
-    ?assertEqual(ok, erles:transaction_write(C, Tid, [create_event(), create_event()])),
-    ?assertEqual(ok, erles:transaction_write(C, Tid, [create_event()])),
-    ?assertEqual(ok, erles:transaction_write(C, Tid, [])),
-    ?assertEqual({ok, 2}, erles:transaction_commit(C, Tid)).
+    {ok, Tid} = erles:txn_start(C, Stream, any),
+    ?assertEqual(ok, erles:txn_append(C, Tid, [create_event(), create_event()])),
+    ?assertEqual(ok, erles:txn_append(C, Tid, [create_event()])),
+    ?assertEqual(ok, erles:txn_append(C, Tid, [])),
+    ?assertEqual({ok, 2}, erles:txn_commit(C, Tid)).
 
 transaction_empty(C) ->
     Stream = gen_stream_id(),
-    {ok, Tid} = erles:transaction_start(C, Stream, any),
-    ?assertEqual({ok, -1}, erles:transaction_commit(C, Tid)).
+    {ok, Tid} = erles:txn_start(C, Stream, any),
+    ?assertEqual({ok, -1}, erles:txn_commit(C, Tid)).
 
 read_event(C) ->
     S = gen_stream_id(),
@@ -184,7 +210,7 @@ read_all_and_filter(C, S, Pos, Dir, Acc) ->
     end.
 
 
-subscriptions(C) ->
+prim_subscriptions(C) ->
     S1 = gen_stream_id(),
     S2 = gen_stream_id(),
     E1 = create_event(),
@@ -197,49 +223,184 @@ subscriptions(C) ->
     RE3 = map_event(S1, 2, E3),
     RE4 = map_event(S2, 0, E4),
     RE5 = map_event(S2, 1, E5),
-    {SubscriptionPid1, ListenerPid1} = create_subscriber(C, S1, 3),
-    {SubscriptionPid2, ListenerPid2} = create_subscriber(C, S2, 2),
+    ListPid1 = create_listener([RE1, RE2, RE3]),
+    ListPid2 = create_listener([RE4, RE5]),
+    {ok, SubPid1, _SubPos1} = erles:subscribe(C, S1, [{subscriber, ListPid1}]),
+    {ok, SubPid2, _SubPos2} = erles:subscribe(C, S2, [{subscriber, ListPid2}]),
     {ok, 0} = erles:append(C, S1, -1, [E1]),
     {ok, 0} = erles:append(C, S2, -1, [E4]),
     {ok, 1} = erles:append(C, S1, 0, [E2]),
     {ok, 1} = erles:append(C, S2, 0, [E5]),
     {ok, 2} = erles:append(C, S1, 1, [E3]),
     SubRes1 = receive
-                  {subscriber_done, ListenerPid1, Res1} -> Res1
-                  after 5000 -> subscriber1_timeout
+                  {done, ListPid1, Res1} -> Res1
+                  after 5000 -> listener1_timeout
               end,
     SubRes2 = receive
-                  {subscriber_done, ListenerPid2, Res2} -> Res2
-                  after 5000 -> subscriber2_timeout
+                  {done, ListPid2, Res2} -> Res2
+                  after 5000 -> listener2_timeout
               end,
-    ?assertEqual([RE1, RE2, RE3], SubRes1),
-    ?assertEqual([RE4, RE5], SubRes2),
-    ?assertEqual(ok, erles:unsubscribe(SubscriptionPid2)),
-    ?assertEqual(ok, erles:unsubscribe(SubscriptionPid1)),
-    ListenerPid1 ! stop,
-    ListenerPid2 ! stop.
+    ?assertEqual(ok, SubRes1),
+    ?assertEqual(ok, SubRes2),
+    ?assertEqual(ok, erles:unsubscribe(SubPid1)),
+    ?assertEqual(ok, erles:unsubscribe(SubPid2)),
+    ListPid1 ! stop,
+    ListPid2 ! stop.
 
-create_subscriber(C, StreamId, EventCount) ->
+perm_subscription(C) ->
+    S = gen_stream_id(),
+    E0 = create_event(),
+    E1 = create_event(),
+    E2 = create_event(),
+    E3 = create_event(),
+    E4 = create_event(),
+    _RE0 = map_event(S, 0, E0),
+    RE1 = map_event(S, 1, E1),
+    RE2 = map_event(S, 2, E2),
+    RE3 = map_event(S, 3, E3),
+    RE4 = map_event(S, 4, E4),
+    LiveListPid = create_listener([RE3, RE4]),
+    InclListPid = create_listener([RE1, RE2, RE3, RE4]),
+    ExclListPid = create_listener([RE2, RE3, RE4]),
+    {ok, 0} = erles:append(C, S, any, [E0]),
+    {ok, 1} = erles:append(C, S, any, [E1]),
+    {ok, 2} = erles:append(C, S, any, [E2]),
+    {ok, LiveSubPid} = erles:subscribe_perm(C, S, live, [{subscriber, LiveListPid}]),
+    {ok, InclSubPid} = erles:subscribe_perm(C, S, {inclusive, 1}, [{subscriber, InclListPid}]),
+    {ok, ExclSubPid} = erles:subscribe_perm(C, S, {exclusive, 1}, [{subscriber, ExclListPid}]),
+    {ok, 3} = erles:append(C, S, any, [E3]),
+    {ok, 4} = erles:append(C, S, any, [E4]),
+    LiveSubRes = receive
+                     {done, LiveListPid, LiveRes} -> LiveRes
+                     after 5000 -> live_listener_timeout
+                  end,
+    InclSubRes = receive
+                     {done, InclListPid, InclRes} -> InclRes
+                     after 5000 -> incl_listener_timeout
+                  end,
+    ExclSubRes = receive
+                     {done, ExclListPid, ExclRes} -> ExclRes
+                     after 5000 -> excl_listener_timeout
+                  end,
+    ?assertEqual(ok, LiveSubRes),
+    ?assertEqual(ok, InclSubRes),
+    ?assertEqual(ok, ExclSubRes),
+    ?assertEqual(ok, erles:unsubscribe_perm(LiveSubPid)),
+    ?assertEqual(ok, erles:unsubscribe_perm(InclSubPid)),
+    ?assertEqual(ok, erles:unsubscribe_perm(ExclSubPid)),
+    LiveListPid ! stop,
+    InclListPid ! stop,
+    ExclListPid ! stop.
+
+create_listener(ExpectedEvents) ->
     SelfPid = self(),
-    SubscriberPid = spawn_link(fun() -> subscriber(EventCount, SelfPid, []) end),
-    {ok, SubscriptionPid, _SubPos} = erles:subscribe(C, StreamId, [{subscriber, SubscriberPid}]),
-    io:format("Subscribed to ~p, pid: ~p~n", [StreamId, SubscriptionPid]),
-    {SubscriptionPid, SubscriberPid}.
+    spawn_link(fun() -> listener(ExpectedEvents, SelfPid) end).
 
-subscriber(0, RespPid, Acc) ->
-    Res = lists:reverse(Acc),
-    RespPid ! {subscriber_done, self(), Res},
+listener([], RespPid) ->
+    RespPid ! {done, self(), ok},
     receive
-        stop -> ok
+        stop -> ok;
+        {unsubscribed, _SubPid, requested_by_client} -> listener([], RespPid);
+        Unexpected -> erlang:error({listener_unexpected_msg, self(), Unexpected})
     after 5000 ->
-        erlang:display({listener_shutdown_timed_out, self()})
+        erlang:error({listener_timed_out, self()})
     end;
 
-subscriber(EventsToGo, RespPid, Acc) ->
+listener([CurEvent | EventsToGo], RespPid) ->
     receive
-        E={event, _Event, _EventPos} -> subscriber(EventsToGo-1, RespPid, [E | Acc]);
-        Unexpected -> erlang:display({unexpected_msg, Unexpected})
+        {event, _SubPid, CurEvent} -> listener(EventsToGo, RespPid);
+        Unexpected ->
+            io:format("~100P ~n ~100P ~n", [Unexpected, 500, CurEvent, 500]),
+            RespPid ! {done, self(), {unexpected, Unexpected, expected, CurEvent}}
     end.
+
+
+append_security_works(C) ->
+    S = gen_stream_id(),
+    Meta = #stream_meta{acl=#stream_acl{write_roles=[?ROLE_ADMINS]}},
+    {ok, _} = erles:set_metadata(C, S, any, Meta),
+    E1 = create_event(),
+    Opts = [{auth, {"admin", <<"changeit">>}}],
+    ?assertEqual({error, access_denied}, erles:append(C, S, any, [E1])),
+    ?assertEqual({ok, 0},                erles:append(C, S, any, [E1], Opts)).
+
+transaction_start_security_works(C) ->
+    S = gen_stream_id(),
+    Meta = #stream_meta{acl=#stream_acl{write_roles=[?ROLE_ADMINS]}},
+    {ok, _} = erles:set_metadata(C, S, any, Meta),
+    Opts = [{auth, {"admin", <<"changeit">>}}],
+    ?assertEqual({error, access_denied}, erles:txn_start(C, S, any)),
+    ?assertMatch({ok, _T},               erles:txn_start(C, S, any, Opts)).
+
+transaction_commit_security_works(C) ->
+    S = gen_stream_id(),
+    Meta = #stream_meta{acl=#stream_acl{write_roles=[?ROLE_ADMINS]}},
+    {ok, _} = erles:set_metadata(C, S, any, Meta),
+    E1 = create_event(),
+    Opts = [{auth, {"admin", <<"changeit">>}}],
+    {ok, T1} =                           erles:txn_start(C, S, any, Opts),
+    ?assertEqual(ok,                     erles:txn_append(C, T1, [E1])),
+    ?assertEqual({error, access_denied}, erles:txn_commit(C, T1)),
+    {ok, T2} =                           erles:txn_start(C, S, any, Opts),
+    ?assertEqual(ok,                     erles:txn_append(C, T2, [E1])),
+    ?assertEqual({ok, 0},                erles:txn_commit(C, T2, Opts)).
+
+delete_security_works(C) ->
+    S = gen_stream_id(),
+    Meta = #stream_meta{acl=#stream_acl{write_roles=[?ROLE_ADMINS]}},
+    {ok, _} = erles:set_metadata(C, S, any, Meta),
+    E1 = create_event(),
+    Opts = [{auth, {"admin", <<"changeit">>}}],
+    ?assertEqual({error, access_denied}, erles:append(C, S, any, [E1])),
+    ?assertEqual({ok, 0}, erles:append(C, S, any, [E1], Opts)).
+
+read_event_security_works(C) ->
+    S = gen_stream_id(),
+    Meta = #stream_meta{acl=#stream_acl{read_roles=[?ROLE_ADMINS]}},
+    {ok, _} = erles:set_metadata(C, S, any, Meta),
+    E1 = create_event(),
+    RE1 = map_event(S, 0, E1),
+    Opts = [{auth, {"admin", <<"changeit">>}}],
+    {ok, 0} = erles:append(C, S, any, [E1], Opts),
+    ?assertEqual({error, access_denied}, erles:read_event(C, S, first)),
+    ?assertEqual({ok, RE1},              erles:read_event(C, S, first, Opts)).
+
+read_stream_security_works(C) ->
+    S = gen_stream_id(),
+    Meta = #stream_meta{acl=#stream_acl{read_roles=[?ROLE_ADMINS]}},
+    {ok, _} = erles:set_metadata(C, S, any, Meta),
+    E1 = create_event(),
+    RE1 = map_event(S, 0, E1),
+    Opts = [{auth, {"admin", <<"changeit">>}}],
+    {ok, 0} = erles:append(C, S, any, [E1], Opts),
+    ?assertEqual({error, access_denied},            erles:read_stream(C, S, first, 10)),
+    ?assertEqual({error, access_denied},            erles:read_stream(C, S, last, 10, backward)),
+    ?assertEqual({ok, [RE1], 1, true},  erles:read_stream(C, S, first, 10, forward, Opts)),
+    ?assertEqual({ok, [RE1], -1, true}, erles:read_stream(C, S, last, 10, backward, Opts)).
+
+read_all_security_works(C) ->
+    S = gen_stream_id(),
+    Meta = #stream_meta{acl=#stream_acl{read_roles=[?ROLE_ADMINS]}},
+    {ok, _} = erles:set_metadata(C, S, any, Meta),
+    E1 = create_event(),
+    Opts = [{auth, {"admin", <<"changeit">>}}],
+    {ok, 0} = erles:append(C, S, any, [E1], Opts),
+    ?assertEqual({error, access_denied},           erles:read_stream(C, all, first, 10)),
+    ?assertEqual({error, access_denied},           erles:read_stream(C, all, last, 10, backward)),
+    ?assertMatch({ok, _, _, _},                    erles:read_stream(C, all, first, 10, forward, Opts)),
+    ?assertMatch({ok, _, _, _},                    erles:read_stream(C, all, last, 10, backward, Opts)).
+
+subscription_security_works(C) ->
+    S = gen_stream_id(),
+    Meta = #stream_meta{acl=#stream_acl{read_roles=[?ROLE_ADMINS]}},
+    {ok, _} = erles:set_metadata(C, S, any, Meta),
+    E1 = create_event(),
+    Opts = [{auth, {"admin", <<"changeit">>}}],
+    {ok, 0} = erles:append(C, S, any, [E1], Opts),
+    ?assertEqual({error, access_denied}, erles:subscribe(C, S)),
+    {ok, SubscrPid, _} =                 erles:subscribe(C, S, Opts),
+    ?assertEqual(ok,                     erles:unsubscribe(SubscrPid)).
+
 
 metadata_raw_get_set_works(C) ->
     S = gen_stream_id(),
@@ -264,12 +425,12 @@ metadata_raw_setting_with_wrong_expver_fails(C) ->
 
 metadata_raw_setting_for_deleted_stream_fails(C) ->
     S = gen_stream_id(),
-    ?assertEqual(ok, erles:delete(C, S, any)),
+    ?assertEqual(ok, erles:delete(C, S, any, perm)),
     ?assertEqual({error, stream_deleted}, erles:set_metadata(C, S, any, <<>>)).
 
 metadata_raw_getting_for_deleted_stream_fails(C) ->
     S = gen_stream_id(),
-    ?assertEqual(ok, erles:delete(C, S, any)),
+    ?assertEqual(ok, erles:delete(C, S, any, perm)),
     ?assertEqual({error, stream_deleted}, erles:get_metadata(C, S, raw)).
 
 metadata_raw_returns_last_meta(C) ->

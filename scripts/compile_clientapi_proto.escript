@@ -10,5 +10,5 @@ main([]) ->
                                        [{output_src_dir, OutputSrcDir},
                                         {output_include_dir, OutputIncludeDir}]);
 
-main(Args) ->
+main(_Args) ->
     io:format("Usage: ~s~n", [filename:basename(escript:script_name())]).

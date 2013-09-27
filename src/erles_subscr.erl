@@ -12,7 +12,7 @@
 -include("erles_internal.hrl").
 
 -record(state, {corr_id,
-                esq_pid,
+                els_pid,
                 conn_pid,
                 reply_pid,
                 timeout,
@@ -27,14 +27,14 @@
                 sub_mon_ref}).
 
 stop(Pid) ->
-    gen_fsm:sync_send_event(Pid, unsubscribe).
+    gen_fsm:sync_send_event(Pid, stop).
 
 
 init({subscribe_to_stream, S=#sys_params{}, {StreamId, ResolveLinks, SubPid}}) ->
     process_flag(trap_exit, true),
     MonRef = erlang:monitor(process, SubPid),
     State = #state{corr_id = S#sys_params.corr_id,
-                   esq_pid = S#sys_params.esq_pid,
+                   els_pid = S#sys_params.els_pid,
                    conn_pid = S#sys_params.conn_pid,
                    reply_pid = S#sys_params.reply_pid,
                    timeout = S#sys_params.op_timeout,
@@ -164,12 +164,12 @@ subscribed({pkg, Cmd, CorrId, _Auth, Data}, State=#state{corr_id=CorrId}) ->
         stream_event_appeared ->
             Dto = erles_clientapi_pb:decode_streameventappeared(Data),
             EventRes = erles_utils:resolved_event(State#state.sub_kind, Dto#streameventappeared.event),
-            notify(State, EventRes),
+            notify(State, {event, self(), EventRes}),
             {next_state, subscribed, State};
         subscription_dropped ->
             Dto = erles_clientapi_pb:decode_subscriptiondropped(Data),
             Reason = Dto#subscriptiondropped.reason,
-            notify(State, {unsubscribed, Reason}),
+            notify(State, {unsubscribed, self(), Reason}),
             complete(State);
         _ ->
             io:format("Unexpected command received: ~p, data: ~p.~n", [Cmd, Data]),
@@ -177,24 +177,24 @@ subscribed({pkg, Cmd, CorrId, _Auth, Data}, State=#state{corr_id=CorrId}) ->
     end;
 
 subscribed(disconnected, State=#state{}) ->
-    notify(State, {unsubscribed, connection_dropped}),
+    notify(State, {unsubscribed, self(), connection_dropped}),
     complete(State);
 
 subscribed({aborted, Reason}, State=#state{}) ->
-    notify(State, {unsubscribed, {aborted, Reason}}),
+    notify(State, {unsubscribed, self(), {aborted, Reason}}),
     complete(State);
 
 subscribed({subscriber_down, Reason}, State=#state{}) ->
-    notify(State, {unsubscribed, {subscriber_down, Reason}}),
+    notify(State, {unsubscribed, self(), {subscriber_down, Reason}}),
     complete(State);
 
 subscribed(Msg, State) ->
     io:format("Unexpected ASYNC EVENT ~p, state name ~p, state data ~p~n", [Msg, subscribed, State]),
     {next_state, retry_pending, State}.
 
-subscribed(unsubscribe, From, State) ->
+subscribed(stop, From, State) ->
     issue_unsubscribe_request(State),
-    notify(State, {unsubscribed, requested_by_client}),
+    notify(State, {unsubscribed, self(), requested_by_client}),
     gen_fsm:reply(From, ok),
     complete(State);
 
@@ -244,13 +244,13 @@ issue_unsubscribe_request(State) ->
 complete(State, Result) ->
     cancel_timer(State#state.timer_ref),
     gen_fsm:reply(State#state.reply_pid, Result),
-    erles_fsm:operation_completed(State#state.esq_pid, State#state.corr_id),
+    erles_fsm:operation_completed(State#state.els_pid, State#state.corr_id),
     erlang:demonitor(State#state.sub_mon_ref, [flush]),
     {stop, normal, State}.
 
 complete(State) ->
     cancel_timer(State#state.timer_ref),
-    erles_fsm:operation_completed(State#state.esq_pid, State#state.corr_id),
+    erles_fsm:operation_completed(State#state.els_pid, State#state.corr_id),
     erlang:demonitor(State#state.sub_mon_ref, [flush]),
     {stop, normal, State}.
 
@@ -288,7 +288,7 @@ retry(Reason, State=#state{retries=Retries}) when Retries > 0 ->
     io:format("Retrying subscription because ~p.~n", [Reason]),
     cancel_timer(State#state.timer_ref),
     NewCorrId = erles_utils:gen_uuid(),
-    erles_fsm:operation_restarted(State#state.esq_pid, State#state.corr_id, NewCorrId),
+    erles_fsm:operation_restarted(State#state.els_pid, State#state.corr_id, NewCorrId),
     TimerRef = erlang:start_timer(State#state.retry_delay, self(), retry),
     {next_state, retry_pending, State#state{corr_id=NewCorrId, retries=Retries-1, timer_ref=TimerRef}};
 

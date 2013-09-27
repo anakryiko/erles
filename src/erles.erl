@@ -4,10 +4,10 @@
 -export([connect/2, connect/3, close/1]).
 -export([ping/1]).
 -export([append/4, append/5]).
--export([transaction_start/3, transaction_start/4]).
--export([transaction_write/3, transaction_write/4]).
--export([transaction_commit/2, transaction_commit/3]).
--export([delete/3, delete/4]).
+-export([txn_start/3, txn_start/4]).
+-export([txn_append/3, txn_append/4]).
+-export([txn_commit/2, txn_commit/3]).
+-export([delete/3, delete/4, delete/5]).
 -export([read_event/3, read_event/4]).
 -export([read_stream/4, read_stream/5, read_stream/6]).
 -export([subscribe/2, subscribe/3, unsubscribe/1]).
@@ -102,25 +102,25 @@ append(Pid, StreamId, ExpectedVersion, Events, Auth, MasterOnly)
                                  {StreamId, ExpectedVersion, Events, MasterOnly}}, infinity).
 
 %% START EXPLICIT TRANSACTION
--spec transaction_start(pid(), stream_id(), exp_ver()) ->
+-spec txn_start(pid(), stream_id(), exp_ver()) ->
         {'ok', trans_id()} | {'error', write_error()}.
-transaction_start(Pid, StreamId, ExpectedVersion) ->
-    transaction_start(Pid, StreamId, ExpectedVersion, []).
+txn_start(Pid, StreamId, ExpectedVersion) ->
+    txn_start(Pid, StreamId, ExpectedVersion, []).
 
--spec transaction_start(pid(), stream_id(), exp_ver(), [write_option()]) ->
+-spec txn_start(pid(), stream_id(), exp_ver(), [write_option()]) ->
         {'ok', trans_id()} | {'error', write_error()}.
-transaction_start(Pid, StreamId, ExpectedVersion, Options) ->
+txn_start(Pid, StreamId, ExpectedVersion, Options) ->
     ExpVer = case ExpectedVersion of
         any -> ?EXPVER_ANY;
         _ -> ExpectedVersion
     end,
     Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
     MasterOnly = proplists:get_value(master_only, Options, ?DEF_MASTER_ONLY),
-    transaction_start(Pid, StreamId, ExpVer, Auth, MasterOnly).
+    txn_start(Pid, StreamId, ExpVer, Auth, MasterOnly).
 
--spec transaction_start(pid(), stream_id(), exp_ver(), auth(), boolean()) ->
+-spec txn_start(pid(), stream_id(), exp_ver(), auth(), boolean()) ->
         {'ok', trans_id()} | {'error', write_error()}.
-transaction_start(Pid, StreamId, ExpectedVersion, Auth, MasterOnly)
+txn_start(Pid, StreamId, ExpectedVersion, Auth, MasterOnly)
         when is_integer(ExpectedVersion), ExpectedVersion >= ?EXPVER_ANY,
              is_boolean(MasterOnly) ->
     gen_fsm:sync_send_event(Pid, {op, {transaction_start, temp, Auth},
@@ -128,21 +128,21 @@ transaction_start(Pid, StreamId, ExpectedVersion, Auth, MasterOnly)
 
 
 %% WRITE EVENTS IN EXPLICIT TRANSACTION
--spec transaction_write(pid(), trans_id(), [event_data()]) ->
+-spec txn_append(pid(), trans_id(), [event_data()]) ->
         'ok' | {'error', write_error()}.
-transaction_write(Pid, TransactionId, Events) ->
-    transaction_write(Pid, TransactionId, Events, []).
+txn_append(Pid, TransactionId, Events) ->
+    txn_append(Pid, TransactionId, Events, []).
 
--spec transaction_write(pid(), trans_id(), [event_data()], [write_option()]) ->
+-spec txn_append(pid(), trans_id(), [event_data()], [write_option()]) ->
         'ok' | {'error', write_error()}.
-transaction_write(Pid, TransactionId, Events, Options) ->
+txn_append(Pid, TransactionId, Events, Options) ->
     Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
     MasterOnly = proplists:get_value(master_only, Options, ?DEF_MASTER_ONLY),
-    transaction_write(Pid, TransactionId, Events, Auth, MasterOnly).
+    txn_append(Pid, TransactionId, Events, Auth, MasterOnly).
 
--spec transaction_write(pid(), trans_id(), [event_data()], auth(), boolean()) ->
+-spec txn_append(pid(), trans_id(), [event_data()], auth(), boolean()) ->
         'ok' | {'error', write_error()}.
-transaction_write(Pid, TransactionId, Events, Auth, MasterOnly)
+txn_append(Pid, TransactionId, Events, Auth, MasterOnly)
         when is_integer(TransactionId), TransactionId >= 0,
              is_list(Events),
              is_boolean(MasterOnly) ->
@@ -151,21 +151,21 @@ transaction_write(Pid, TransactionId, Events, Auth, MasterOnly)
 
 
 %% COMMIT EXPLICIT TRANSACTION
--spec transaction_commit(pid(), trans_id()) ->
+-spec txn_commit(pid(), trans_id()) ->
         {'ok', stream_ver()} | {'error', write_error()}.
-transaction_commit(Pid, TransactionId) ->
-    transaction_commit(Pid, TransactionId, []).
+txn_commit(Pid, TransactionId) ->
+    txn_commit(Pid, TransactionId, []).
 
--spec transaction_commit(pid(), trans_id(), [write_option()]) ->
+-spec txn_commit(pid(), trans_id(), [write_option()]) ->
         {'ok', stream_ver()} | {'error', write_error()}.
-transaction_commit(Pid, TransactionId, Options) ->
+txn_commit(Pid, TransactionId, Options) ->
     Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
     MasterOnly = proplists:get_value(master_only, Options, ?DEF_MASTER_ONLY),
-    transaction_commit(Pid, TransactionId, Auth, MasterOnly).
+    txn_commit(Pid, TransactionId, Auth, MasterOnly).
 
--spec transaction_commit(pid(), trans_id(), auth(), boolean()) ->
+-spec txn_commit(pid(), trans_id(), auth(), boolean()) ->
         {'ok', stream_ver()} | {'error', write_error()}.
-transaction_commit(Pid, TransactionId, Auth, MasterOnly)
+txn_commit(Pid, TransactionId, Auth, MasterOnly)
         when is_integer(TransactionId), TransactionId >= 0,
              is_boolean(MasterOnly) ->
     gen_fsm:sync_send_event(Pid, {op, {transaction_commit, temp, Auth},
@@ -176,26 +176,32 @@ transaction_commit(Pid, TransactionId, Auth, MasterOnly)
 -spec delete(pid(), stream_id(), exp_ver()) ->
         'ok' | {'error', write_error()}.
 delete(Pid, StreamId, ExpectedVersion) ->
-    delete(Pid, StreamId, ExpectedVersion, []).
+    delete(Pid, StreamId, ExpectedVersion, soft, []).
 
--spec delete(pid(), stream_id(), exp_ver(), [write_option()]) ->
+-spec delete(pid(), stream_id(), exp_ver(), 'soft' | 'perm') ->
         'ok' | {'error', write_error()}.
-delete(Pid, StreamId, ExpectedVersion, Options) ->
+delete(Pid, StreamId, ExpectedVersion, DeleteType) ->
+    delete(Pid, StreamId, ExpectedVersion, DeleteType, []).
+
+-spec delete(pid(), stream_id(), exp_ver(), 'soft' | 'perm', [write_option()]) ->
+        'ok' | {'error', write_error()}.
+delete(Pid, StreamId, ExpectedVersion, DeleteType, Options) ->
     ExpVer = case ExpectedVersion of
         any -> ?EXPVER_ANY;
         _   -> ExpectedVersion
     end,
     Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
     MasterOnly = proplists:get_value(master_only, Options, ?DEF_MASTER_ONLY),
-    delete(Pid, StreamId, ExpVer, Auth, MasterOnly).
+    delete(Pid, StreamId, ExpVer, DeleteType, Auth, MasterOnly).
 
--spec delete(pid(), stream_id(), exp_ver(), auth(), boolean()) ->
+-spec delete(pid(), stream_id(), exp_ver(), 'soft' | 'perm', auth(), boolean()) ->
         'ok' | {'error', write_error()}.
-delete(Pid, StreamId, ExpectedVersion, Auth, MasterOnly)
+delete(Pid, StreamId, ExpectedVersion, DeleteType, Auth, MasterOnly)
     when is_integer(ExpectedVersion), ExpectedVersion >= ?EXPVER_ANY,
+         DeleteType =:= soft orelse DeleteType =:= perm,
          is_boolean(MasterOnly) ->
     gen_fsm:sync_send_event(Pid, {op, {delete_stream, temp, Auth},
-                                      {StreamId, ExpectedVersion, MasterOnly}}, infinity).
+                                      {StreamId, ExpectedVersion, DeleteType, MasterOnly}}, infinity).
 
 
 %% READ SINGLE EVENT

@@ -11,7 +11,7 @@
 
 -record(state, {req_cmd,
                 corr_id,
-                esq_pid,
+                els_pid,
                 conn_pid,
                 reply_pid,
                 timeout,
@@ -24,7 +24,7 @@
 init({ReqCmd, S=#sys_params{}, OpParams}) ->
     State = #state{req_cmd = ReqCmd,
                    corr_id = S#sys_params.corr_id,
-                   esq_pid = S#sys_params.esq_pid,
+                   els_pid = S#sys_params.els_pid,
                    conn_pid = S#sys_params.conn_pid,
                    reply_pid = S#sys_params.reply_pid,
                    timeout = S#sys_params.op_timeout,
@@ -157,7 +157,7 @@ send_request(S=#state{}) ->
 complete(State=#state{}, Result) ->
     cancel_timer(State#state.timer_ref),
     gen_fsm:reply(State#state.reply_pid, Result),
-    erles_fsm:operation_completed(State#state.esq_pid, State#state.corr_id),
+    erles_fsm:operation_completed(State#state.els_pid, State#state.corr_id),
     {stop, normal, State}.
 
 abort(State=#state{}, Result) ->
@@ -190,7 +190,7 @@ retry(Reason, State) ->
         true ->
             cancel_timer(State#state.timer_ref),
             NewCorrId = erles_utils:gen_uuid(),
-            erles_fsm:operation_restarted(State#state.esq_pid, State#state.corr_id, NewCorrId),
+            erles_fsm:operation_restarted(State#state.els_pid, State#state.corr_id, NewCorrId),
             TimerRef = erlang:start_timer(State#state.retry_delay, self(), retry),
             {next_state, retry_pending, State#state{corr_id=NewCorrId, retries=Retries, timer_ref=TimerRef}};
         false ->
@@ -268,11 +268,12 @@ create_package(CorrId, Auth, transaction_commit, {TransactionId, MasterOnly}) ->
     Bin = erles_clientapi_pb:encode_transactioncommit(Dto),
     erles_pkg:create(transaction_commit, CorrId, Auth, Bin);
 
-create_package(CorrId, Auth, delete_stream, {StreamId, ExpectedVersion, MasterOnly}) ->
+create_package(CorrId, Auth, delete_stream, {StreamId, ExpectedVersion, DeleteType, MasterOnly}) ->
     Dto = #deletestream{
         event_stream_id = StreamId,
         expected_version = ExpectedVersion,
-        require_master = MasterOnly
+        require_master = MasterOnly,
+        hard_delete = DeleteType =:= 'perm'
     },
     Bin = erles_clientapi_pb:encode_deletestream(Dto),
     erles_pkg:create(delete_stream, CorrId, Auth, Bin);

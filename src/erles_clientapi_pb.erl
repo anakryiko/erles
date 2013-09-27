@@ -151,7 +151,8 @@
 -record(deletestreamcompleted, {result, message}).
 
 -record(deletestream,
-	{event_stream_id, expected_version, require_master}).
+	{event_stream_id, expected_version, require_master,
+	 hard_delete}).
 
 -record(writeeventscompleted,
 	{result, message, first_event_number,
@@ -655,6 +656,9 @@ iolist(deletestream, Record) ->
 	  int32, []),
      pack(3, required,
 	  with_default(Record#deletestream.require_master, none),
+	  bool, []),
+     pack(4, optional,
+	  with_default(Record#deletestream.hard_delete, none),
 	  bool, [])];
 iolist(deletestreamcompleted, Record) ->
     [pack(1, required,
@@ -1389,7 +1393,8 @@ decode(writeeventscompleted, Bytes)
     Decoded = decode(Bytes, Types, Defaults),
     to_record(writeeventscompleted, Decoded);
 decode(deletestream, Bytes) when is_binary(Bytes) ->
-    Types = [{3, require_master, bool, []},
+    Types = [{4, hard_delete, bool, []},
+	     {3, require_master, bool, []},
 	     {2, expected_version, int32, []},
 	     {1, event_stream_id, string, []}],
     Defaults = [],

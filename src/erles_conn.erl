@@ -6,7 +6,7 @@
 
 -include("erles_internal.hrl").
 
--record(state, {esq_pid,
+-record(state, {els_pid,
                 destination=unknown,
                 socket=none,
                 cur_endpoint=none,
@@ -16,8 +16,8 @@
 
 -record(node, {state, tcp_ip, tcp_port, http_ip, http_port}).
 
-start_link(EsqPid, Destination, Settings=#conn_settings{}) ->
-    State = #state{esq_pid=EsqPid, destination=Destination, settings=Settings},
+start_link(ElsPid, Destination, Settings=#conn_settings{}) ->
+    State = #state{els_pid=ElsPid, destination=Destination, settings=Settings},
     gen_server:start_link(?MODULE, State, []).
 
 connect(Pid) ->
@@ -99,7 +99,7 @@ handle_info({tcp, Socket, Data}, State=#state{socket=Socket, msg_num=MsgNum}) ->
             ok;
         _Other ->
             io:format("Package received: ~p~n", [Pkg]),
-            State#state.esq_pid ! {package, Pkg}
+            State#state.els_pid ! {package, Pkg}
     end,
     {noreply, State#state{msg_num=MsgNum+1}};
 
@@ -114,7 +114,7 @@ handle_info({tcp_closed, _Socket}, State) ->
     {noreply, State};
 
 handle_info({tcp_error, Socket, Reason}, State = #state{socket=Socket}) ->
-    State#state.esq_pid ! {closed, {tcp_error, Reason}},
+    State#state.els_pid ! {closed, {tcp_error, Reason}},
     {stop, {tcp_error, Reason}, State};
 
 handle_info({tcp_error, _Socket, _Reason}, State) ->
@@ -139,7 +139,7 @@ close_tcp(#state{socket=none}, _Reason) ->
 close_tcp(State, Reason) ->
     io:format("Connection to ~p closed: ~p.~n", [State#state.cur_endpoint, Reason]),
     ok = gen_tcp:close(State#state.socket),
-    State#state.esq_pid ! {disconnected, State#state.cur_endpoint, Reason}.
+    State#state.els_pid ! {disconnected, State#state.cur_endpoint, Reason}.
 
 start_heartbeat(State=#state{settings=S}) ->
     Timeout = S#conn_settings.heartbeat_period,
@@ -183,11 +183,11 @@ establish_connection(State, ConnType, Destination, FailedEndpoint) ->
     Attempts = S#conn_settings.max_conn_retries + 1,
     case connect(State, ConnType, Destination, FailedEndpoint, Attempts) of
         {ok, NewState} ->
-            NewState#state.esq_pid ! {connected, NewState#state.cur_endpoint},
+            NewState#state.els_pid ! {connected, NewState#state.cur_endpoint},
             NewState2 = start_heartbeat(NewState),
             {noreply, NewState2};
         {error, Reason} ->
-            State#state.esq_pid ! {closed, {connect_failed, Reason}},
+            State#state.els_pid ! {closed, {connect_failed, Reason}},
             {stop, {connect_failed, Reason}, State}
     end.
 

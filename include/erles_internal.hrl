@@ -61,7 +61,7 @@
 
 %% REQUEST COMMON PARAMS
 -record(sys_params, {corr_id,
-                     esq_pid,
+                     els_pid,
                      conn_pid,
                      reply_pid,
                      op_timeout,

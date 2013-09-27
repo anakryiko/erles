@@ -11,25 +11,25 @@
                 sub_mon_ref}).
 
 -record(worker, {perm_sub_pid,
-                 esq_pid,
+                 els_pid,
                  sub_pid,
                  stream_id,
                  max_count,
                  opts}).
 
-start_link(EsqPid, StreamId, From, SubPid, Auth, ResolveLinks, MaxCount) ->
-    InitParams = {EsqPid, StreamId, From, SubPid, Auth, ResolveLinks, MaxCount},
+start_link(ElsPid, StreamId, From, SubPid, Auth, ResolveLinks, MaxCount) ->
+    InitParams = {ElsPid, StreamId, From, SubPid, Auth, ResolveLinks, MaxCount},
     gen_server:start_link(?MODULE, InitParams, []).
 
 stop(Pid) ->
-    gen_server:cast(Pid, stop).
+    gen_server:call(Pid, stop).
 
 
-init({EsqPid, StreamId, From, SubPid, Auth, ResolveLinks, MaxCount}) ->
+init({ElsPid, StreamId, From, SubPid, Auth, ResolveLinks, MaxCount}) ->
     process_flag(trap_exit, true),
     MonRef = erlang:monitor(process, SubPid),
     WorkerState = #worker{perm_sub_pid=self(),
-                          esq_pid=EsqPid,
+                          els_pid=ElsPid,
                           sub_pid=SubPid,
                           stream_id=StreamId,
                           max_count=MaxCount,
@@ -46,20 +46,20 @@ init({EsqPid, StreamId, From, SubPid, Auth, ResolveLinks, MaxCount}) ->
     {ok, State}.
 
 
+handle_call(stop, _From, State) ->
+    erlang:demonitor(State#state.sub_mon_ref, [flush]),
+    State#state.sub_pid ! {unsubscribed, self(), requested_by_client},
+    State#state.worker_pid ! stop,
+    {stop, normal, ok, State};
+
 handle_call(Msg, From, State) ->
     io:format("Unexpected CALL message ~p from ~p~n State: ~p~n", [Msg, From, State]),
     {noreply, State}.
 
 
-handle_cast(stop, State) ->
-    erlang:demonitor(State#state.sub_mon_ref, [flush]),
-    State#state.sub_pid ! {stopped, self(), requested_by_client},
-    State#state.worker_pid ! stop,
-    {stop, normal, State};
-
 handle_cast({worker_stopped, Reason}, State) ->
     erlang:demonitor(State#state.sub_mon_ref, [flush]),
-    State#state.sub_pid ! {stopped, self(), Reason},
+    State#state.sub_pid ! {unsubscribed, self(), Reason},
     {stop, normal, State};
 
 handle_cast(Msg, State) ->
@@ -69,7 +69,7 @@ handle_cast(Msg, State) ->
 
 handle_info({'EXIT', WorkerPid, Reason}, State=#state{worker_pid=WorkerPid}) ->
     erlang:demonitor(State#state.sub_mon_ref, [flush]),
-    State#state.sub_pid ! {stopped, self(), {worker_failed, Reason}},
+    State#state.sub_pid ! {unsubscribed, self(), {worker_failed, Reason}},
     {stop, normal, State};
 
 handle_info({'DOWN', MonRef, process, SubPid, _Reason}, State=#state{sub_pid=SubPid, sub_mon_ref=MonRef}) ->
@@ -91,11 +91,11 @@ code_change(_OldVsn, State, _Extra) ->
 catchup(State, Pos={_PosKind, StreamPos}) ->
     receive stop -> ok
     after 0 ->
-        EsqPid = State#worker.esq_pid,
+        ElsPid = State#worker.els_pid,
         StreamId = State#worker.stream_id,
         MaxCount = State#worker.max_count,
         Opts = State#worker.opts,
-        case erles:read_stream(EsqPid, StreamId, StreamPos, MaxCount, forward, Opts) of
+        case erles:read_stream(ElsPid, StreamId, StreamPos, MaxCount, forward, Opts) of
             {ok, Events, NextPos, false} ->
                 send_events(State#worker.sub_pid, Events, Pos),
                 catchup(State, {inclusive, NextPos});
@@ -110,10 +110,10 @@ catchup(State, Pos={_PosKind, StreamPos}) ->
 subscribe(State, Pos) ->
     receive stop -> ok
     after 0 ->
-        EsqPid = State#worker.esq_pid,
+        ElsPid = State#worker.els_pid,
         StreamId = State#worker.stream_id,
         Opts = State#worker.opts,
-        case erles:subscribe(EsqPid, StreamId, Opts) of
+        case erles:subscribe(ElsPid, StreamId, Opts) of
             {ok, SubPid, SubPos} ->
                 case Pos of
                     live -> live(State, {inclusive, SubPos}, SubPid);
@@ -124,37 +124,37 @@ subscribe(State, Pos) ->
         end
     end.
 
-switchover(State, Pos={_PosKind, StreamPos}, SubscriptionPid) ->
-    receive stop -> erles:unsubscribe(SubscriptionPid)
+switchover(State, Pos={_PosKind, StreamPos}, SubscrPid) ->
+    receive stop -> erles:unsubscribe(SubscrPid)
     after 0 ->
-        EsqPid = State#worker.esq_pid,
+        ElsPid = State#worker.els_pid,
         StreamId = State#worker.stream_id,
         MaxCount = State#worker.max_count,
         Opts = State#worker.opts,
-        case erles:read_stream(EsqPid, StreamId, StreamPos, MaxCount, forward, Opts) of
+        case erles:read_stream(ElsPid, StreamId, StreamPos, MaxCount, forward, Opts) of
             {ok, Events, NextPos, false} ->
                 send_events(State#worker.sub_pid, Events, Pos),
-                switchover(State, {inclusive, NextPos}, SubscriptionPid);
+                switchover(State, {inclusive, NextPos}, SubscrPid);
             {ok, Events, NextPos, true} ->
                 send_events(State#worker.sub_pid, Events, Pos),
-                live(State, {inclusive, NextPos}, SubscriptionPid);
+                live(State, {inclusive, NextPos}, SubscrPid);
             {error, Reason} ->
-                erles:unsubscribe(SubscriptionPid),
+                erles:unsubscribe(SubscrPid),
                 stop(State#worker.perm_sub_pid, {read_failed, Reason})
         end
     end.
 
-live(State, Pos, SubscriptionPid) ->
+live(State, Pos, SubscrPid) ->
     receive
         stop ->
-            erles:unsubscribe(SubscriptionPid);
-        {unsubscribed, {aborted, _}} ->
+            erles:unsubscribe(SubscrPid);
+        {unsubscribed, SubscrPid, {aborted, _}} ->
             stop(State#worker.perm_sub_pid, subscription_aborted);
-        {unsubscribed, _Reason} ->
+        {unsubscribed, SubscrPid, _Reason} ->
             catchup(State, Pos);
-        {event, Event, NewPos} ->
+        {event, SubscrPid, {event, Event, NewPos}} ->
             send_event(State#worker.sub_pid, Event, NewPos, Pos),
-            live(State, {exclusive, NewPos}, SubscriptionPid);
+            live(State, {exclusive, NewPos}, SubscrPid);
         Unexpected ->
             io:format("Unexpected event in live phase of perm_subscr: ~p.~n", [Unexpected])
     end.
@@ -165,10 +165,10 @@ send_events(Pid, Events, Pos) when is_list(Events) ->
     lists:foreach(fun({event, E, P}) -> send_event(Pid, E, P, Pos) end, Events).
 
 send_event(Pid, Event, EventPos, {inclusive, SubPos}) when EventPos >= SubPos ->
-    Pid ! {event, Event, EventPos};
+    Pid ! {event, self(), {event, Event, EventPos}};
 
 send_event(Pid, Event, EventPos, {exclusive, SubPos}) when EventPos > SubPos ->
-    Pid ! {event, Event, EventPos};
+    Pid ! {event, self(), {event, Event, EventPos}};
 
 send_event(_Pid, _Event, _EventPos, {_PosKind, _SubPos}) ->
     ok.

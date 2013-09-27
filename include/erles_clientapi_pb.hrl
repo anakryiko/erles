@@ -67,7 +67,8 @@
 -record(deletestream, {
     event_stream_id = erlang:error({required, event_stream_id}),
     expected_version = erlang:error({required, expected_version}),
-    require_master = erlang:error({required, require_master})
+    require_master = erlang:error({required, require_master}),
+    hard_delete
 }).
 -endif.
 

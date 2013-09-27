@@ -1,5 +1,6 @@
 -module(erles_utils).
 -export([gen_uuid/0, uuid_to_string/1, uuid_to_string/2]).
+-export([binary_str/1]).
 -export([parse_ip/1]).
 -export([shuffle/1]).
 -export([resolved_event/2]).
@@ -83,6 +84,9 @@ uuid_to_string(Value, nodash) ->
     lists:flatten(io_lib:format("~8.16.0b~4.16.0b~4.16.0b~4.16.0b~12.16.0b",
                                 [B1, B2, B3, B4, B5])).
 
+-spec binary_str(binary() | string()) -> binary().
+binary_str(Bin) when is_binary(Bin) -> Bin;
+binary_str(Str) when is_list(Str)   -> list_to_binary(Str).
 
 -spec parse_ip(Value :: binary() | string()) -> inet:ip_address().
 parse_ip(Bin) when is_binary(Bin) -> parse_ip(binary_to_list(Bin));
@@ -118,6 +122,7 @@ resolved_event(stream, E = #resolvedindexedevent{}) ->
     end,
     ResolvedEvent = event_rec(E#resolvedindexedevent.event),
     OrigEventNumber  = OrigEvent#eventrecord.event_number,
+
     {event, ResolvedEvent, OrigEventNumber}.
 
 -spec event_rec(EventRecord :: #eventrecord{}) -> #event{}.

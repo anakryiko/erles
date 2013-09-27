@@ -33,11 +33,13 @@ to_binary({pkg, Cmd, CorrId, noauth, Data}) ->
 
 to_binary({pkg, Cmd, CorrId, {Login, Pass}, Data}) ->
     EncCmd = encode_cmd(Cmd),
-    LoginLen = byte_size(Login),
-    PassLen = byte_size(Pass),
+    LoginBin = erles_utils:binary_str(Login),
+    LoginLen = byte_size(LoginBin),
+    PassBin = erles_utils:binary_str(Pass),
+    PassLen = byte_size(PassBin),
     BinData = iolist_to_binary(Data),
     <<EncCmd:8, 1:8, CorrId/binary,
-      LoginLen:8, Login/binary, PassLen:8, Pass/binary, BinData/binary>>.
+      LoginLen:8, LoginBin/binary, PassLen:8, PassBin/binary, BinData/binary>>.
 
 
 decode_cmd(16#01) -> heartbeat_req;
