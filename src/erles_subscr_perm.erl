@@ -14,25 +14,25 @@
                  els_pid,
                  sub_pid,
                  stream_id,
-                 max_count,
+                 read_batch,
                  opts}).
 
-start_link(ElsPid, StreamId, From, SubPid, Auth, ResolveLinks, MaxCount) ->
-    InitParams = {ElsPid, StreamId, From, SubPid, Auth, ResolveLinks, MaxCount},
+start_link(ElsPid, StreamId, From, SubPid, Auth, ResolveLinks, ReadBatch) ->
+    InitParams = {ElsPid, StreamId, From, SubPid, Auth, ResolveLinks, ReadBatch},
     gen_server:start_link(?MODULE, InitParams, []).
 
 stop(Pid) ->
     gen_server:call(Pid, stop).
 
 
-init({ElsPid, StreamId, From, SubPid, Auth, ResolveLinks, MaxCount}) ->
+init({ElsPid, StreamId, From, SubPid, Auth, ResolveLinks, ReadBatch}) ->
     process_flag(trap_exit, true),
     MonRef = erlang:monitor(process, SubPid),
     WorkerState = #worker{perm_sub_pid=self(),
                           els_pid=ElsPid,
                           sub_pid=SubPid,
                           stream_id=StreamId,
-                          max_count=MaxCount,
+                          read_batch=ReadBatch,
                           opts=[{resolve, ResolveLinks}, {auth, Auth}]},
     WorkerPid = spawn_link(fun() ->
         case From of
@@ -93,9 +93,9 @@ catchup(State, Pos={_PosKind, StreamPos}) ->
     after 0 ->
         ElsPid = State#worker.els_pid,
         StreamId = State#worker.stream_id,
-        MaxCount = State#worker.max_count,
+        ReadBatch = State#worker.read_batch,
         Opts = State#worker.opts,
-        case erles:read_stream(ElsPid, StreamId, StreamPos, MaxCount, forward, Opts) of
+        case erles:read_stream(ElsPid, StreamId, StreamPos, ReadBatch, forward, Opts) of
             {ok, Events, NextPos, false} ->
                 send_events(State#worker.sub_pid, Events, Pos),
                 catchup(State, {inclusive, NextPos});
@@ -129,9 +129,9 @@ switchover(State, Pos={_PosKind, StreamPos}, SubscrPid) ->
     after 0 ->
         ElsPid = State#worker.els_pid,
         StreamId = State#worker.stream_id,
-        MaxCount = State#worker.max_count,
+        ReadBatch = State#worker.read_batch,
         Opts = State#worker.opts,
-        case erles:read_stream(ElsPid, StreamId, StreamPos, MaxCount, forward, Opts) of
+        case erles:read_stream(ElsPid, StreamId, StreamPos, ReadBatch, forward, Opts) of
             {ok, Events, NextPos, false} ->
                 send_events(State#worker.sub_pid, Events, Pos),
                 switchover(State, {inclusive, NextPos}, SubscrPid);

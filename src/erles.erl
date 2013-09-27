@@ -346,8 +346,8 @@ subscribe_perm(Pid, StreamId, From, Options) ->
     Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
     ResolveLinks = proplists:get_value(resolve, Options, ?DEF_RESOLVE),
     SubscriberPid = proplists:get_value(subscriber, Options, self()),
-    MaxCount = proplists:get_value(max_count, Options, 100),
-    erles_subscr_perm:start_link(Pid, StreamId, From, SubscriberPid, Auth, ResolveLinks, MaxCount).
+    ReadBatch = proplists:get_value(read_batch, Options, 100),
+    erles_subscr_perm:start_link(Pid, StreamId, From, SubscriberPid, Auth, ResolveLinks, ReadBatch).
 
 -spec unsubscribe_perm(SubscrPid :: pid()) -> 'ok'.
 unsubscribe_perm(SubscrPid) ->
