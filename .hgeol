@@ -1,7 +1,7 @@
 [patterns]
-** = native
+**         = native
 
-rebar = BIN
+rebar      = BIN
 
 **.c       = native
 **.h       = native

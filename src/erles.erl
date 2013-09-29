@@ -10,8 +10,8 @@
 -export([delete/3, delete/4, delete/5]).
 -export([read_event/3, read_event/4]).
 -export([read_stream/4, read_stream/5, read_stream/6]).
--export([subscribe/2, subscribe/3, unsubscribe/1]).
--export([subscribe_perm/2, subscribe_perm/3, subscribe_perm/4, unsubscribe_perm/1]).
+-export([subscribe/2, subscribe/3, subscribe/4, unsubscribe/1]).
+-export([subscribe_prim/2, subscribe_prim/3, unsubscribe_prim/1]).
 -export([set_metadata/4, set_metadata/5]).
 -export([get_metadata/2, get_metadata/3, get_metadata/4]).
 
@@ -304,54 +304,54 @@ stream_pos(_StreamId, last, backward)       -> ?LAST_EVENT_NUM;
 stream_pos(_StreamId, EventNumber, _Dir)    -> EventNumber.
 
 
-%% PRIMITIVE SUBSCRIPTION
--spec subscribe(pid(), all_stream_id())
-        -> {'ok', SubscrPid :: pid(), stream_pos()}.
-subscribe(Pid, StreamId) ->
-    subscribe(Pid, StreamId, []).
-
--spec subscribe(pid(), all_stream_id(), [subscr_option()])
-        -> {'ok', SubscrPid :: pid(), stream_pos()}.
-subscribe(Pid, StreamId, Options) ->
-    Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
-    ResolveLinks = proplists:get_value(resolve, Options, ?DEF_RESOLVE),
-    SubscriberPid = proplists:get_value(subscriber, Options, self()),
-    subscribe(Pid, StreamId, Auth, ResolveLinks, SubscriberPid).
-
--spec subscribe(pid(), all_stream_id(), auth(), boolean(), pid())
-        -> {'ok', SubscrPid :: pid(), stream_pos()}.
-subscribe(Pid, StreamId, Auth, ResolveLinks, SubscriberPid) ->
-    gen_fsm:sync_send_event(Pid, {op, {subscribe_to_stream, perm, Auth},
-                                      {StreamId, ResolveLinks, SubscriberPid}}, infinity).
-
--spec unsubscribe(SubscrPid :: pid()) -> 'ok'.
-unsubscribe(SubscrPid) ->
-    erles_subscr:stop(SubscrPid).
-
-
 %% PERMANENT CATCH-UP SUBSCRIPTION
--spec subscribe_perm(pid(), all_stream_id()) ->
+-spec subscribe(pid(), all_stream_id()) ->
         {'ok', SubscrPid :: pid()} | {'error', term()}.
-subscribe_perm(Pid, StreamId) ->
-    subscribe_perm(Pid, StreamId, live, []).
+subscribe(Pid, StreamId) ->
+    subscribe(Pid, StreamId, live, []).
 
--spec subscribe_perm(pid(), all_stream_id(), subscr_pos()) ->
+-spec subscribe(pid(), all_stream_id(), subscr_pos()) ->
         {'ok', SubscrPid :: pid()} | {'error', term()}.
-subscribe_perm(Pid, StreamId, From) ->
-    subscribe_perm(Pid, StreamId, From, []).
+subscribe(Pid, StreamId, From) ->
+    subscribe(Pid, StreamId, From, []).
 
--spec subscribe_perm(pid(), all_stream_id(), subscr_pos(), [subscr_perm_option()]) ->
+-spec subscribe(pid(), all_stream_id(), subscr_pos(), [subscr_option()]) ->
         {'ok', SubscrPid :: pid()} | {'error', term()}.
-subscribe_perm(Pid, StreamId, From, Options) ->
+subscribe(Pid, StreamId, From, Options) ->
     Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
     ResolveLinks = proplists:get_value(resolve, Options, ?DEF_RESOLVE),
     SubscriberPid = proplists:get_value(subscriber, Options, self()),
     ReadBatch = proplists:get_value(read_batch, Options, 100),
     erles_subscr_perm:start_link(Pid, StreamId, From, SubscriberPid, Auth, ResolveLinks, ReadBatch).
 
--spec unsubscribe_perm(SubscrPid :: pid()) -> 'ok'.
-unsubscribe_perm(SubscrPid) ->
+-spec unsubscribe(SubscrPid :: pid()) -> 'ok'.
+unsubscribe(SubscrPid) ->
     erles_subscr_perm:stop(SubscrPid).
+
+
+%% PRIMITIVE SUBSCRIPTION
+-spec subscribe_prim(pid(), all_stream_id())
+        -> {'ok', SubscrPid :: pid(), stream_pos()}.
+subscribe_prim(Pid, StreamId) ->
+    subscribe_prim(Pid, StreamId, []).
+
+-spec subscribe_prim(pid(), all_stream_id(), [subscr_prim_option()])
+        -> {'ok', SubscrPid :: pid(), stream_pos()}.
+subscribe_prim(Pid, StreamId, Options) ->
+    Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
+    ResolveLinks = proplists:get_value(resolve, Options, ?DEF_RESOLVE),
+    SubscriberPid = proplists:get_value(subscriber, Options, self()),
+    subscribe_prim(Pid, StreamId, Auth, ResolveLinks, SubscriberPid).
+
+-spec subscribe_prim(pid(), all_stream_id(), auth(), boolean(), pid())
+        -> {'ok', SubscrPid :: pid(), stream_pos()}.
+subscribe_prim(Pid, StreamId, Auth, ResolveLinks, SubscriberPid) ->
+    gen_fsm:sync_send_event(Pid, {op, {subscribe_to_stream, perm, Auth},
+                                      {StreamId, ResolveLinks, SubscriberPid}}, infinity).
+
+-spec unsubscribe_prim(SubscrPid :: pid()) -> 'ok'.
+unsubscribe_prim(SubscrPid) ->
+    erles_subscr_prim:stop(SubscrPid).
 
 
 %% SET STREAM METADATA
@@ -393,14 +393,14 @@ get_metadata(Pid, StreamId, MetaType) ->
                         {ok, raw_meta_res()} | {'error', read_event_error()}.
 get_metadata(Pid, StreamId, struct, Options) ->
     case get_metadata(Pid, StreamId, raw, Options) of
-        {ok, {meta, <<>>, EventNumber}} ->
-            {ok, {meta, #stream_meta{}, EventNumber}};
-        {ok, {meta, RawMeta, EventNumber}} ->
+        {ok, <<>>, EventNumber} ->
+            {ok, #stream_meta{}, EventNumber};
+        {ok, RawMeta, EventNumber} ->
             F = fun(_, _, _) -> {error, bad_json} end,
             Opts = [{error_handler, F}, {incomplete_handler, F}],
             case jsx:decode(RawMeta, Opts) of
                 {error, bad_json} -> {error, bad_json};
-                MetaJson -> {ok, {meta, erles_utils:metajson_to_meta(MetaJson), EventNumber}}
+                MetaJson -> {ok, erles_utils:metajson_to_meta(MetaJson), EventNumber}
             end;
         {error, Reason} ->
             {error, Reason}
@@ -414,10 +414,10 @@ get_metadata(Pid, StreamId, raw, Options) when is_list(StreamId) ->
 
 get_metadata(Pid, StreamId, raw, Options) ->
     case read_event(Pid, <<"$$", StreamId/binary>>, last, Options) of
-        {ok, {event, Event=#event{}, _EventPos}} ->
-            {ok, {meta, Event#event.data, Event#event.event_number}};
+        {ok, Event=#event{}, _EventPos} ->
+            {ok, Event#event.data, Event#event.event_number};
         {error, no_stream} ->
-            {ok, {meta, <<>>, -1}};
+            {ok, <<>>, -1};
         {error, Reason} ->
             {error, Reason}
     end.

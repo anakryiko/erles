@@ -373,7 +373,8 @@ deserialize_result(delete_stream, delete_stream_completed, Data) ->
 deserialize_result(read_event, read_event_completed, Data) ->
     Dto = erles_clientapi_pb:decode_readeventcompleted(Data),
     case Dto#readeventcompleted.result of
-        'Success' ->       {complete, {ok, erles_utils:resolved_event(stream, Dto#readeventcompleted.event)}};
+        'Success' ->       {E, P} = erles_utils:resolved_event(stream, Dto#readeventcompleted.event),
+                           {complete, {ok, E, P}};
         'NotFound' ->      {complete, {error, no_event}};
         'NoStream' ->      {complete, {error, no_stream}};
         'StreamDeleted' -> {complete, {error, stream_deleted}};

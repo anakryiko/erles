@@ -1,4 +1,4 @@
--module(erles_subscr).
+-module(erles_subscr_prim).
 
 -export([stop/1]).
 -export([init/1, handle_sync_event/4, handle_event/3, handle_info/3, code_change/4, terminate/3]).
@@ -163,8 +163,8 @@ subscribed({pkg, Cmd, CorrId, _Auth, Data}, State=#state{corr_id=CorrId}) ->
     case Cmd of
         stream_event_appeared ->
             Dto = erles_clientapi_pb:decode_streameventappeared(Data),
-            EventRes = erles_utils:resolved_event(State#state.sub_kind, Dto#streameventappeared.event),
-            notify(State, {event, self(), EventRes}),
+            {E, P} = erles_utils:resolved_event(State#state.sub_kind, Dto#streameventappeared.event),
+            notify(State, {subscr_event, self(), E, P}),
             {next_state, subscribed, State};
         subscription_dropped ->
             Dto = erles_clientapi_pb:decode_subscriptiondropped(Data),

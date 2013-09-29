@@ -39,8 +39,11 @@
 
 -type write_option()       :: {auth, auth()} | {master_only, boolean()}.
 -type read_option()        :: {auth, auth()} | {master_only, boolean()} | {resolve, boolean()}.
--type subscr_option()      :: {auth, auth()} | {resolve, boolean()} | {subscriber, boolean()}.
--type subscr_perm_option() :: {auth, auth()} | {resolve, boolean()} | {subscriber, boolean()} | {max_count, pos_integer()}.
+-type subscr_option()      :: {auth, auth()}
+                            | {resolve, boolean()}
+                            | {subscriber, boolean()}
+                            | {max_count, pos_integer()}.
+-type subscr_prim_option() :: {auth, auth()} | {resolve, boolean()} | {subscriber, boolean()}.
 
 %% Event data to send for write to Event Store
 -record(event_data,

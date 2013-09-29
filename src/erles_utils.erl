@@ -104,7 +104,7 @@ shuffle(L) when is_list(L) ->
 resolved_event(all, E = #resolvedevent{}) ->
     ResolvedEvent = event_rec(E#resolvedevent.event),
     OrigPos = {tfpos, E#resolvedevent.commit_position, E#resolvedevent.prepare_position},
-    {event, ResolvedEvent, OrigPos};
+    {ResolvedEvent, OrigPos};
 
 resolved_event(stream, E = #resolvedevent{}) ->
     OrigEvent = case E#resolvedevent.link of
@@ -113,7 +113,7 @@ resolved_event(stream, E = #resolvedevent{}) ->
     end,
     ResolvedEvent = event_rec(E#resolvedevent.event),
     OrigEventNumber = OrigEvent#eventrecord.event_number,
-    {event, ResolvedEvent, OrigEventNumber};
+    {ResolvedEvent, OrigEventNumber};
 
 resolved_event(stream, E = #resolvedindexedevent{}) ->
     OrigEvent = case E#resolvedindexedevent.link of
@@ -122,8 +122,7 @@ resolved_event(stream, E = #resolvedindexedevent{}) ->
     end,
     ResolvedEvent = event_rec(E#resolvedindexedevent.event),
     OrigEventNumber  = OrigEvent#eventrecord.event_number,
-
-    {event, ResolvedEvent, OrigEventNumber}.
+    {ResolvedEvent, OrigEventNumber}.
 
 -spec event_rec(EventRecord :: #eventrecord{}) -> #event{}.
 event_rec(E = #eventrecord{}) ->

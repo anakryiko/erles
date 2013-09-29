@@ -113,7 +113,7 @@ subscribe(State, Pos) ->
         ElsPid = State#worker.els_pid,
         StreamId = State#worker.stream_id,
         Opts = State#worker.opts,
-        case erles:subscribe(ElsPid, StreamId, Opts) of
+        case erles:subscribe_prim(ElsPid, StreamId, Opts) of
             {ok, SubPid, SubPos} ->
                 case Pos of
                     live -> live(State, {inclusive, SubPos}, SubPid);
@@ -125,7 +125,7 @@ subscribe(State, Pos) ->
     end.
 
 switchover(State, Pos={_PosKind, StreamPos}, SubscrPid) ->
-    receive stop -> erles:unsubscribe(SubscrPid)
+    receive stop -> erles:unsubscribe_prim(SubscrPid)
     after 0 ->
         ElsPid = State#worker.els_pid,
         StreamId = State#worker.stream_id,
@@ -139,7 +139,7 @@ switchover(State, Pos={_PosKind, StreamPos}, SubscrPid) ->
                 send_events(State#worker.sub_pid, Events, Pos),
                 live(State, {inclusive, NextPos}, SubscrPid);
             {error, Reason} ->
-                erles:unsubscribe(SubscrPid),
+                erles:unsubscribe_prim(SubscrPid),
                 stop(State#worker.perm_sub_pid, {read_failed, Reason})
         end
     end.
@@ -147,12 +147,12 @@ switchover(State, Pos={_PosKind, StreamPos}, SubscrPid) ->
 live(State, Pos, SubscrPid) ->
     receive
         stop ->
-            erles:unsubscribe(SubscrPid);
+            erles:unsubscribe_prim(SubscrPid);
         {unsubscribed, SubscrPid, {aborted, _}} ->
             stop(State#worker.perm_sub_pid, subscription_aborted);
         {unsubscribed, SubscrPid, _Reason} ->
             catchup(State, Pos);
-        {event, SubscrPid, {event, Event, NewPos}} ->
+        {subscr_event, SubscrPid, Event, NewPos} ->
             send_event(State#worker.sub_pid, Event, NewPos, Pos),
             live(State, {exclusive, NewPos}, SubscrPid);
         Unexpected ->
@@ -162,13 +162,13 @@ live(State, Pos, SubscrPid) ->
 stop(PermSubPid, Reason) -> PermSubPid ! {worker_stopped, self(), Reason}.
 
 send_events(Pid, Events, Pos) when is_list(Events) ->
-    lists:foreach(fun({event, E, P}) -> send_event(Pid, E, P, Pos) end, Events).
+    lists:foreach(fun({E, P}) -> send_event(Pid, E, P, Pos) end, Events).
 
 send_event(Pid, Event, EventPos, {inclusive, SubPos}) when EventPos >= SubPos ->
-    Pid ! {event, self(), {event, Event, EventPos}};
+    Pid ! {subscr_event, self(), Event, EventPos};
 
 send_event(Pid, Event, EventPos, {exclusive, SubPos}) when EventPos > SubPos ->
-    Pid ! {event, self(), {event, Event, EventPos}};
+    Pid ! {subscr_event, self(), Event, EventPos};
 
 send_event(_Pid, _Event, _EventPos, {_PosKind, _SubPos}) ->
     ok.
