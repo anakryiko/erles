@@ -42,8 +42,8 @@ Main features:
   - Ping operation (just for fun and testing that Event Store is responding :).
 
 
-Getting started
-===============
+Using erles
+===========
 
 Installation
 ------------
@@ -79,14 +79,14 @@ General conventions
 ### Strings ###
 
 Whenever string value is expected, erles accepts both `<<"binary strings">>` and
-`"list strings"`. If not -- that's a bug, please report it.
+`"list strings"`. If not - that's a bug, please report it.
 
 ### Operation results ###
 
 All operations in case of success return either `ok` atom or a tuple in which
-first element is atom `ok`, depending on operation. Also most operations in
-case of failure return a 2-tuple `{error, Reason}`, where `Reason` is either
-predefined atom or any Erlang term (only in some rare cases).
+first element is atom `ok`. Also most operations in case of failure return a
+2-tuple `{error, Reason}`, where `Reason` is either predefined atom or any
+Erlang term (only in some rare cases).
 
 Common operation failure reasons:
 
@@ -108,18 +108,24 @@ include into your modules for more convenient usage of erles records).
 ### Operation options ###
 
 Most erles functions exist in at least two forms:
+
   - short one with sensible defaults;
+
   - and the long one takes a list of additional options that modify or enhance
     operation behavior.
 
 **Connection operation** accepts the following options:
+
   - `{default_auth, noauth | defauth | {Login, Pass}}` (default: `noauth`) -
     default authentication used for each operation if no explicit override is
     provided for particular operation:
-    * `noauth` -- no authentication should be used;
-    * `defauth` -- same as `noauth` (when set as connection option, see
+
+    * `noauth` - no authentication should be used;
+
+    * `defauth` - same as `noauth` (when set as connection option, see
       below for meaning when used for individual operation);
-    * `{Login, Pass}` -- login/password string pair to use for authentication.
+
+    * `{Login, Pass}` - login/password string pair to use for authentication.
 
   - `{max_server_ops, pos_integer()}` (default: `2000`) - maximum amount of
     active operations on Event Store node. Used to prevent node overload. All
@@ -162,52 +168,60 @@ All timeouts are in milliseconds. `infinity` is not accepted.
 **Write operations** (append, transactions, stream deletion, setting stream
 metadata) accept the following options:
 
-    - `{auth, noauth | defauth | {Login, Pass}}` -- authentication used for
-      operation.
-        * `noauth` -- no authentication should be used;
-        * `defauth` -- use default authentication of connection (set with
-          `default_auth` option provided in `connect/4`). If no default
-          authentication is set on connection level, `noauth` is used;
-        * `{Login, Pass}` -- login/password string pair to use for authentication.
-      Default value -- `defauth`.
+  - `{auth, noauth | defauth | {Login, Pass}}` (default: `defauth`) -
+    authentication used for operation.
 
-    - `{master_only, boolean()}` -- the flag that specifies whether operation
-      should be performed exclusively on master node. When `master_only` flag is
-      set, erles connection will automatically reconnect to new master in case
-      connected node is not master. This option ensures no additional
-      communication overhead and lower latency for writes (otherwise write
-      operations are forwarded within Event Store nodes internally) and most up
-      to date reads from master for reads (otherwise reads are served locally
-      from Event Store node, no forwarding occurs). Default value is `true`.
+      * `noauth` - no authentication should be used;
+
+      * `defauth` - use default authentication of connection (set with
+        `default_auth` option provided in `connect/4`). If no default
+        authentication is set on connection level, `noauth` is used;
+
+      * `{Login, Pass}` - login/password string pair to use for authentication.
+
+
+  - `{master_only, boolean()}` - the flag that specifies whether operation
+    should be performed exclusively on master node. When `master_only` flag is
+    set, erles connection will automatically reconnect to new master in case
+    connected node is not master. This option ensures no additional
+    communication overhead and lower latency for writes (otherwise write
+    operations are forwarded within Event Store nodes internally) and most up
+    to date reads from master for reads (otherwise reads are served locally
+    from Event Store node, no forwarding occurs). Default value is `true`.
 
 **Read operations** (single event read, stream range reads, getting stream
 metadata) accept the following options:
 
-    - `auth` -- same as for write operations;
-    - `master_only` -- same as for write operations, see option's description
-      for effect on reads;
-    - `{resolve, boolean()}` -- the flag that indicates whether Event Store
-      should resolve links emitted from projections into actual events. If the
-      flag is set -- any link is automatically replaced with original linked
-      event. Defaults to `true`.
+  - `auth` - same as for write operations;
+
+  - `master_only` - same as for write operations, see option's description
+    for effect on reads;
+
+  - `{resolve, boolean()}` - the flag that indicates whether Event Store
+    should resolve links emitted from projections into actual events. If the
+    flag is set - any link is automatically replaced with original linked
+    event. Defaults to `true`.
 
 **Subscription operation** accepts the following options:
 
-    - `auth` -- same as for write and read operations;
-    - `resolve` -- same as for read operations;
-    - `{subscriber, pid()}` -- PID of process that will receive all subscription
-      messages. If not provided -- the caller process ID is used.
-    - `{read_batch, pos_integer()}` -- the number of events that will be read
-      in a single stream read operation during catch-up phase of subscription.
-      Default value -- `100`.
+  - `auth` - same as for write and read operations;
 
-Creating connection
--------------------
+  - `resolve` - same as for read operations;
+
+  - `{subscriber, pid()}` - PID of process that will receive all subscription
+    messages. If not provided - the caller process ID is used.
+
+  - `{read_batch, pos_integer()}` - the number of events that will be read
+    in a single stream read operation during catch-up phase of subscription.
+    Default value - `100`.
+
+Connection
+----------
 
 All operations in erles are performed through a connection, which, once
 established, stays open and keeps reconnecting in case of TCP connection drop.
 
-erles connection is established through calling `connect/2` (or `connect/3')
+erles connection is established through calling `connect/2` (or `connect/3`)
 function. When successful, function returns process ID, which is used with all
 operations (except subscription `unsubscribe/1`).
 
@@ -259,7 +273,7 @@ ok
 ```
 
 Writing events
---------------
+-------
 
 Event Store provides two ways to store events, both of which are supported by
 erles:
@@ -282,42 +296,46 @@ function:
 ```
 Where parameters (in order) are:
 
-    1. erles connection PID (returned from `connect/2` function).
-    2. Non-empty stream ID (either binary or list string).
-    3. Expected version of stream we are about to write to. Expected version is
-       either atom `any` (to specify that you don't care about version of
-       stream, so no optimistic concurrency control should be used and write
-       should always succeed) or integer, with `-2` meaning same as `any`, `-1`
-       meaning empty stream, any other non-negative integer specifying the
-       number of last event in the stream.
-    4. List of events to append to stream, each event defined as:
+  1. erles connection PID (returned from `connect/2` function).
+  2. Non-empty stream ID (either binary or list string).
+  3. Expected version of stream we are about to write to. Expected version is
+     either atom `any` (to specify that you don't care about version of
+     stream, so no optimistic concurrency control should be used and write
+     should always succeed) or integer, with `-2` meaning same as `any`, `-1`
+     meaning empty stream, any other non-negative integer specifying the
+     number of last event in the stream.
+  4. List of events to append to stream, each event defined as:
 
-       ```erlang
-       -record(event_data,
-               {
-                   event_id = erles_utils:gen_uuid()                 :: uuid(),
-                   event_type = erlang:error({required, event_type}) :: binary() | string(),
-                   data_type = raw                                   :: 'raw' | 'json',
-                   data = erlang:error({required, data})             :: binary(),
-                   metadata = <<>>                                   :: binary()
-               }).
-       ```
+     ```erlang
+     -record(event_data,
+             {
+                 event_id = erles_utils:gen_uuid()                 :: uuid(),
+                 event_type = erlang:error({required, event_type}) :: binary() | string(),
+                 data_type = raw                                   :: 'raw' | 'json',
+                 data = erlang:error({required, data})             :: binary(),
+                 metadata = <<>>                                   :: binary()
+             }).
+     ```
 
-       The two required fields are `event_type` and `data`. `event_id`, if not
-       specified, will be set to newly generated UUID, `metadata` will be empty
-       and data type will be assumed to be `raw` (not structured). If you are
-       writing valid JSON as data, you should set `data_type` to `json`, so
-       Event Store's projections will know how to work with event data.
+     The two required fields are `event_type` and `data`. `event_id`, if not
+     specified, will be set to newly generated UUID, `metadata` will be empty
+     and data type will be assumed to be `raw` (not structured). If you are
+     writing valid JSON as data, you should set `data_type` to `json`, so
+     Event Store's projections will know how to work with event data.
 
 In case of success, the new expected version of stream is returned (that should
 be used with consequent writes to same stream).
 
 The write-specific failure reasons include:
+
   - `wrong_exp_ver` - provided stream expected version is wrong;
+
   - `access_denied` - you don't have enough access rights for operation, provide
     login/password credentials with enough access rights;
+
   - `stream_deleted` - you are trying to write events into the stream that was
     permanently deleted;
+
   - `invalid_transaction` - this can mean few things, but most probably wrong
     transaction ID (for transaction operations).
 
@@ -335,7 +353,8 @@ Example:
 To start transaction you use `txn_start/3` (`txn_start/4`) function:
 
 ```erlang
--spec txn_start(pid(), stream_id(), exp_ver()) -> {'ok', trans_id()} | {'error', write_error()}.
+-spec txn_start(pid(), stream_id(), exp_ver()) ->
+        {'ok', trans_id()} | {'error', write_error()}.
 ```
 
 All parameters have the same meaning as with `append/4`. In case of success
@@ -350,7 +369,8 @@ transaction. Failure reasons are same as for `append/4`.
 To write some events within transaction you use `txn_append/3` function:
 
 ```erlang
--spec txn_append(pid(), trans_id(), [event_data()]) -> 'ok' | {'error', write_error()}.
+-spec txn_append(pid(), trans_id(), [event_data()]) ->
+        'ok' | {'error', write_error()}.
 ```
 
 It accepts connection PID, transaction ID returned from `txn_start/3` and a list
@@ -369,27 +389,33 @@ ok
 To force events to be stored in the stream, call `txn_commit/2`:
 
 ```erlang
+-spec txn_commit(pid(), trans_id()) ->
+        {'ok', stream_ver()} | {'error', write_error()}.
+```
+
+The result is the same as with `append/4` - expected version of stream for
+following writes. Failures are same as well.
+
+```erlang
 > {ok, NextExpVer} = erles:txn_commit(C, Tid).
 {ok,3}
 ```
 
-The result is the same as with `append/4` -- expected version of stream for
-following writes. Failures are same as well.
 
 Reading events
---------------
+-------
 
 To be written... For now, please take a look at `erles_tests.erl` for some
 samples.
 
 Subscriptions
--------------
+-------
 
 To be written... For now, please take a look at `erles_tests.erl` for some
 samples.
 
 Working with stream metadata
-----------------------------
+--------------
 
 To be written... For now, please take a look at `erles_tests.erl` for some
 samples.
