@@ -13,6 +13,16 @@ Copyright © 2013 Andrii Nakryiko <andrii.nakryiko@gmail.com>
 doing something in a non-optimal, non-idiomatic or, even worse, plain wrong way,
 please, let me know and I'll try to fix it.*
 
+Supported versions of Event Store
+=================================
+
+*As erles uses and supports some of nice latest changes to Event Store (next
+expected versions on writes and soft deletes), which haven't been released yet,
+erles can be used only with latest dev-builds currently. As soon as Event Store
+releases its new version, erles will stick to supporting stable versions.*
+
+*Erles itself is not yet production ready, so there could be some slight breaking
+changes if that will lead to better client library.*
 
 Features
 ========
@@ -306,16 +316,16 @@ Where parameters (in order) are:
      number of last event in the stream.
   4. List of events to append to stream, each event defined as:
 
-     ```erlang
-     -record(event_data,
-             {
-                 event_id = erles_utils:gen_uuid()                 :: uuid(),
-                 event_type = erlang:error({required, event_type}) :: binary() | string(),
-                 data_type = raw                                   :: 'raw' | 'json',
-                 data = erlang:error({required, data})             :: binary(),
-                 metadata = <<>>                                   :: binary()
-             }).
-     ```
+```erlang
+-record(event_data,
+        {
+            event_id = erles_utils:gen_uuid()                 :: uuid(),
+            event_type = erlang:error({required, event_type}) :: binary() | string(),
+            data_type = raw                                   :: 'raw' | 'json',
+            data = erlang:error({required, data})             :: binary(),
+            metadata = <<>>                                   :: binary()
+        }).
+```
 
      The two required fields are `event_type` and `data`. `event_id`, if not
      specified, will be set to newly generated UUID, `metadata` will be empty
@@ -361,6 +371,8 @@ All parameters have the same meaning as with `append/4`. In case of success
 transaction ID is returned which should be used with all operations withing that
 transaction. Failure reasons are same as for `append/4`.
 
+Example:
+
 ```erlang
 > {ok, Tid} = erles:txn_start(C, <<"stream">>, 1).
 {ok,9679198}
@@ -376,6 +388,8 @@ To write some events within transaction you use `txn_append/3` function:
 It accepts connection PID, transaction ID returned from `txn_start/3` and a list
 of event of the same structure as in `append/4`. When operation succeeds, events
 are not committed yet.
+
+Example:
 
 ```erlang
 > ok = erles:txn_append(C, Tid, [#event_data{event_type = <<"et1">>,
@@ -395,6 +409,8 @@ To force events to be stored in the stream, call `txn_commit/2`:
 
 The result is the same as with `append/4` - expected version of stream for
 following writes. Failures are same as well.
+
+Example:
 
 ```erlang
 > {ok, NextExpVer} = erles:txn_commit(C, Tid).
