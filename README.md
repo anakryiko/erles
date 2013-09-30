@@ -63,9 +63,11 @@ Download sources from [Bitbucket](https://bitbucket.org/anakryiko/erles) reposit
 To build library and run tests:
 
 ```bash
+$ rebar get-deps
 $ rebar compile
 $ rebar skip_deps=true eunit
 ```
+
 You can also add repository as a dependency to rebar.config:
 
 ```
@@ -396,7 +398,8 @@ Example:
                                              data = <<"{\"num\":123}">>,
                                              data_type = json}]).
 ok
-> ok = erles:txn_append(C, Tid, [#event_data{event_type = <<"et2">>, data = <<1,2,3>>}]).
+> ok = erles:txn_append(C, Tid, [#event_data{event_type = <<"et2">>,
+                                             data = <<1,2,3>>}]).
 ok
 ```
 
