@@ -7,6 +7,8 @@
 -define(DEF_AUTH, defauth).
 -define(DEF_RESOLVE, true).
 -define(DEF_MASTER_ONLY, true).
+-define(DEF_SUBSCRIBER, self()).
+-define(DEF_READ_BATCH, 100).
 
 %% CONNECTION DEFAULTS
 -define(DEF_CONNECTION_TIMEOUT, 2000).

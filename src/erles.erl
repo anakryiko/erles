@@ -320,8 +320,8 @@ subscribe(Pid, StreamId, From) ->
 subscribe(Pid, StreamId, From, Options) ->
     Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
     ResolveLinks = proplists:get_value(resolve, Options, ?DEF_RESOLVE),
-    SubscriberPid = proplists:get_value(subscriber, Options, self()),
-    ReadBatch = proplists:get_value(read_batch, Options, 100),
+    SubscriberPid = proplists:get_value(subscriber, Options, ?DEF_SUBSCRIBER),
+    ReadBatch = proplists:get_value(read_batch, Options, ?DEF_READ_BATCH),
     erles_subscr_perm:start_link(Pid, StreamId, From, SubscriberPid, Auth, ResolveLinks, ReadBatch).
 
 -spec unsubscribe(SubscrPid :: pid()) -> 'ok'.
@@ -340,7 +340,7 @@ subscribe_prim(Pid, StreamId) ->
 subscribe_prim(Pid, StreamId, Options) ->
     Auth = proplists:get_value(auth, Options, ?DEF_AUTH),
     ResolveLinks = proplists:get_value(resolve, Options, ?DEF_RESOLVE),
-    SubscriberPid = proplists:get_value(subscriber, Options, self()),
+    SubscriberPid = proplists:get_value(subscriber, Options, ?DEF_SUBSCRIBER),
     subscribe_prim(Pid, StreamId, Auth, ResolveLinks, SubscriberPid).
 
 -spec subscribe_prim(pid(), all_stream_id(), auth(), boolean(), pid())

@@ -10,7 +10,9 @@
 -type tfpos()              :: {'tfpos', non_neg_integer(), non_neg_integer()}.
 -type stream_pos()         :: event_num() | tfpos().
 -type read_dir()           :: 'forward' | 'backward'.
--type subscr_pos()         :: 'live' | {'inclusive', stream_pos()} | {'exclusive', stream_pos()}.
+-type subscr_pos()         :: 'live'
+                            | {'inclusive', stream_pos()}
+                            | {'exclusive', stream_pos()}.
 
 -type operation_error()    :: 'retry_limit'
                             | 'server_timeout'
@@ -18,12 +20,25 @@
                             | {'not_authenticated', term()}
                             | {'bad_request', term()}.
 
--type read_stream_error()  :: 'no_stream' | 'stream_deleted' | 'access_denied' | operation_error().
+-type read_stream_error()  :: 'no_stream'
+                            | 'stream_deleted'
+                            | 'access_denied'
+                            | operation_error().
+
 -type read_event_error()   :: 'no_event' | read_stream_error().
--type write_error()        :: 'wrong_exp_ver' | 'access_denied' | 'stream_deleted' | 'invalid_transaction' | operation_error().
--type subscr_error()       :: 'access_denied' | {'subscriber_down', term()}  | operation_error().
+
+-type write_error()        :: 'wrong_exp_ver'
+                            | 'access_denied'
+                            | 'stream_deleted'
+                            | 'invalid_transaction'
+                            | operation_error().
+
+-type subscr_error()       :: 'access_denied'
+                            | {'subscriber_down', term()}
+                            | operation_error().
 
 -type auth()               :: 'noauth' | 'defauth' | {Login :: string() | binary(), Pass :: string() | binary()}.
+
 -type connect_option()     :: {'default_auth',       auth()}
                             | {'max_server_ops',     pos_integer()}
                             | {'operation_timeout',  pos_integer()}
@@ -42,7 +57,7 @@
 -type subscr_option()      :: {auth, auth()}
                             | {resolve, boolean()}
                             | {subscriber, boolean()}
-                            | {max_count, pos_integer()}.
+                            | {read_batch, pos_integer()}.
 -type subscr_prim_option() :: {auth, auth()} | {resolve, boolean()} | {subscriber, boolean()}.
 
 %% Event data to send for write to Event Store

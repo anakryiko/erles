@@ -95,7 +95,7 @@ connected(Msg, State) ->
 
 handle_sync_event(close, _From, _StateName, State=#state{}) ->
     ok = erles_conn:stop(State#state.conn_pid),
-    io:format("Connection stopped. Reason: ~p.~n", [conn_stopped]),
+    %io:format("Connection stopped. Reason: ~p.~n", [conn_stopped]),
     {NewActOps, NewWaitOps} = abort_operations(State#state.active_ops,
                                                State#state.waiting_ops,
                                                conn_stopped),
@@ -115,7 +115,7 @@ handle_event({op_completed, CorrId}, StateName, State=#state{active_ops=Ops}) ->
         {ok, #act_op{type=perm}} ->
             State#state{active_ops=dict:erase(CorrId, Ops)};
         error ->
-            io:format("No operation for completion with corrid ~p, ops ~p~n", [CorrId, Ops]),
+            %io:format("No operation for completion with corrid ~p, ops ~p~n", [CorrId, Ops]),
             State
     end,
     %io:format("Op_completed: corrid ~p~n", [CorrId]),
@@ -129,7 +129,7 @@ handle_event({op_restarted, OldCorrId, NewCorrId}, StateName, State=#state{activ
             io:format("No operation for restart with oldcorrid ~p, newcorrid ~p, ops ~p~n", [OldCorrId, NewCorrId, Ops]),
             Ops
     end,
-    io:format("Op_restarted: oldcorrid ~p, newcorrid ~p~n", [OldCorrId, NewCorrId]),
+    %io:format("Op_restarted: oldcorrid ~p, newcorrid ~p~n", [OldCorrId, NewCorrId]),
     {next_state, StateName, State#state{active_ops=NewOps}};
 
 handle_event(Event, StateName, State) ->
@@ -153,7 +153,7 @@ handle_info({disconnected, {_Ip, _Port}, _Reason}, connected, State=#state{activ
     {next_state, connecting, State};
 
 handle_info({closed, Reason}, _StateName, State=#state{active_ops=ActiveOps, waiting_ops=WaitingOps}) ->
-    io:format("Connection stopped. Reason: ~p.~n", [Reason]),
+    %io:format("Connection stopped. Reason: ~p.~n", [Reason]),
     {NewActiveOps, NewWaitingOps} = abort_operations(ActiveOps, WaitingOps, Reason),
     {stop, normal, State#state{active_ops=NewActiveOps, waiting_ops=NewWaitingOps}};
 
@@ -163,10 +163,10 @@ handle_info(Msg, StateName, State) ->
 
 
 terminate(normal, _StateName, _State) ->
-    io:format("Erles connection terminated cleanly!~n"),
+    %io:format("Erles connection terminated cleanly!~n"),
     ok;
-terminate(Reason, _StateName, _State) ->
-    io:format("Erles connection terminated because of ~p!~n", [Reason]),
+terminate(_Reason, _StateName, _State) ->
+    %io:format("Erles connection terminated because of ~p!~n", [_Reason]),
     ok.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
@@ -179,7 +179,7 @@ handle_pkg(State=#state{active_ops=Ops}, Pkg={pkg, _Cmd, CorrId, _Auth, _Data}) 
         {ok, #act_op{pid=Pid}} ->
             erles_ops:handle_pkg(Pid, Pkg);
         error ->
-            io:format("No operation with corrid ~p,~npkg ~p~nOps: ~p~n", [CorrId, Pkg, Ops]),
+            %io:format("No operation with corrid ~p,~npkg ~p~nOps: ~p~n", [CorrId, Pkg, Ops]),
             ok
     end,
     State.

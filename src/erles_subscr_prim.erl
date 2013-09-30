@@ -284,16 +284,16 @@ not_handled(Data, State) ->
             retry(OtherReason, State)
     end.
 
-retry(Reason, State=#state{retries=Retries}) when Retries > 0 ->
-    io:format("Retrying subscription because ~p.~n", [Reason]),
+retry(_Reason, State=#state{retries=Retries}) when Retries > 0 ->
+    %io:format("Retrying subscription because ~p.~n", [_Reason]),
     cancel_timer(State#state.timer_ref),
     NewCorrId = erles_utils:gen_uuid(),
     erles_fsm:operation_restarted(State#state.els_pid, State#state.corr_id, NewCorrId),
     TimerRef = erlang:start_timer(State#state.retry_delay, self(), retry),
     {next_state, retry_pending, State#state{corr_id=NewCorrId, retries=Retries-1, timer_ref=TimerRef}};
 
-retry(Reason, State=#state{retries=Retries}) when Retries =< 0 ->
-    io:format("Retrying subscription because ~p... Retries limit reached!~n", [Reason]),
+retry(_Reason, State=#state{retries=Retries}) when Retries =< 0 ->
+    %io:format("Retrying subscription because ~p... Retries limit reached!~n", [_Reason]),
     complete(State, {error, retry_limit}).
 
 cancel_timer(none)     -> ok;

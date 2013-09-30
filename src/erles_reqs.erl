@@ -183,8 +183,8 @@ not_handled(Data, State) ->
             retry(Reason, State)
     end.
 
-retry(Reason, State) ->
-    io:format("Retrying ~p because ~p.~n", [State#state.req_cmd, Reason]),
+retry(_Reason, State) ->
+    %io:format("Retrying ~p because ~p.~n", [State#state.req_cmd, _Reason]),
     Retries = State#state.retries - 1,
     case Retries >= 0 of
         true ->

@@ -60,7 +60,7 @@ handle_cast(connect, State) ->
 handle_cast({send, Pkg}, State) ->
     case Pkg of
         {pkg, heartbeat_resp, _, _, _} -> ok;
-        _ -> io:format("Package sent: ~p~n", [Pkg])
+        _ -> ok %io:format("Package sent: ~p~n", [Pkg])
     end,
     send_pkg(State#state.socket, Pkg),
     {noreply, State};
@@ -98,7 +98,7 @@ handle_info({tcp, Socket, Data}, State=#state{socket=Socket, msg_num=MsgNum}) ->
         {pkg, heartbeat_resp, _CorrId, _Auth, _PkgData} ->
             ok;
         _Other ->
-            io:format("Package received: ~p~n", [Pkg]),
+            %io:format("Package received: ~p~n", [Pkg]),
             State#state.els_pid ! {package, Pkg}
     end,
     {noreply, State#state{msg_num=MsgNum+1}};
@@ -126,7 +126,7 @@ handle_info(Msg, State) ->
 
 
 terminate(_Reason, _State) ->
-    io:format("erles_conn terminted: ~p~n", [_Reason]),
+    %io:format("erles_conn terminated: ~p~n", [_Reason]),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -137,7 +137,7 @@ close_tcp(#state{socket=none}, _Reason) ->
     ok;
 
 close_tcp(State, Reason) ->
-    io:format("Connection to ~p closed: ~p.~n", [State#state.cur_endpoint, Reason]),
+    %io:format("Connection to ~p closed: ~p.~n", [State#state.cur_endpoint, Reason]),
     ok = gen_tcp:close(State#state.socket),
     State#state.els_pid ! {disconnected, State#state.cur_endpoint, Reason}.
 
@@ -178,7 +178,7 @@ receive_loop(Pid, Socket) ->
 
 
 establish_connection(State, ConnType, Destination, FailedEndpoint) ->
-    io:format("Establishing connection to ~p.~n", [Destination]),
+    %io:format("Establishing connection to ~p.~n", [Destination]),
     S = State#state.settings,
     Attempts = S#conn_settings.max_conn_retries + 1,
     case connect(State, ConnType, Destination, FailedEndpoint, Attempts) of
@@ -200,23 +200,23 @@ connect(State, ConnType, {dns, ClusterDns, ManagerPort}, none, Attempts)
     connect(State, ConnType, {dns, binary_to_list(ClusterDns), ManagerPort}, none, Attempts);
 
 connect(State, ConnType, {dns, ClusterDns, ManagerPort}, none, Attempts) ->
-    io:format("Connecting to ~p.~n", [{dns, ClusterDns, ManagerPort}]),
+    %io:format("Connecting to ~p.~n", [{dns, ClusterDns, ManagerPort}]),
     DnsTimeout = State#state.settings#conn_settings.dns_timeout,
     case inet:getaddrs(ClusterDns, inet, DnsTimeout) of
         {ok, []} ->
-            io:format("DNS lookup of '~p' returned empty list of addresses.~n", [ClusterDns]),
+            %io:format("DNS lookup of '~p' returned empty list of addresses.~n", [ClusterDns]),
             {error, {dns_lookup_failed, empty_addr_list}};
         {ok, Addrs} ->
-            io:format("DNS entry '~p' resolved into ~p.~n", [ClusterDns, Addrs]),
+            %io:format("DNS entry '~p' resolved into ~p.~n", [ClusterDns, Addrs]),
             SeedNodes = [{Ip, ManagerPort} || Ip <- Addrs],
             connect(State, ConnType, {cluster, SeedNodes}, none, Attempts);
         {error, Reason} ->
-            io:format("DNS lookup of '~p' failed, reason: ~p.~n", [ClusterDns, Reason]),
+            %io:format("DNS lookup of '~p' failed, reason: ~p.~n", [ClusterDns, Reason]),
             {error, {dns_lookup_failed, Reason}}
     end;
 
 connect(State, ConnType, {cluster, SeedNodes}, none, Attempts) ->
-    io:format("Connecting to ~p.~n", [{cluster, SeedNodes}]),
+    %io:format("Connecting to ~p.~n", [{cluster, SeedNodes}]),
     Nodes = [#node{state=manager,
                    tcp_ip=none,
                    tcp_port=none,
@@ -229,11 +229,11 @@ connect(State, ConnType, Dest={gossip, Nodes}, FailedEndpoint, Attempts) ->
     delay_connect_if_necessary(State#state.settings, ConnType, Dest),
     case discover_best_endpoint(State#state.settings, Nodes, FailedEndpoint) of
         {ok, {Ip, Port}, Gossip} ->
-            io:format("connect discovered best node ~p.~n", [{Ip, Port}]),
+            %io:format("connect discovered best node ~p.~n", [{Ip, Port}]),
             NewState = State#state{destination={gossip, Gossip}},
             connect(NewState, ConnType, {node, Ip, Port}, none, Attempts);
-        {error, Reason} ->
-            io:format("connect discovering endpoint FAILED: ~p.~n", [Reason]),
+        {error, _Reason} ->
+            %io:format("connect discovering endpoint FAILED: ~p.~n", [_Reason]),
             connect(State, reconnect, State#state.destination, none, Attempts-1)
     end;
 
@@ -244,37 +244,37 @@ connect(State, ConnType, Dest={node, Ip, Port}, _FailedEndpoint, Attempts) ->
     %% big-endianness so we have to do framing explicitly
     case gen_tcp:connect(Ip, Port, [binary, {active, false}], S#conn_settings.conn_timeout) of
         {ok, Socket} ->
-            io:format("Connection to [~p:~p] established.~n", [Ip, Port]),
+            %io:format("Connection to [~p:~p] established.~n", [Ip, Port]),
             Pid = self(),
             _WorkerPid = spawn_link(fun() -> receive_loop(Pid, Socket) end),
             {ok, State#state{socket=Socket, cur_endpoint={Ip, Port}}};
-        {error, Reason} ->
-            io:format("Connection to [~p:~p] failed. Reason: ~p.~n", [Ip, Port, Reason]),
+        {error, _Reason} ->
+            %io:format("Connection to [~p:~p] failed. Reason: ~p.~n", [Ip, Port, _Reason]),
             connect(State, reconnect, State#state.destination, {Ip, Port}, Attempts-1)
     end.
 
 
-delay_connect_if_necessary(S, ConnType, Destination) ->
+delay_connect_if_necessary(S, ConnType, _Destination) ->
     case ConnType of
         connect ->
-            io:format("Connecting to ~p.~n", [Destination]);
+            ok; %io:format("Connecting to ~p.~n", [Destination]);
         switch ->
-            io:format("Switching to ~p.~n", [Destination]);
+            ok; %io:format("Switching to ~p.~n", [Destination]);
         reconnect ->
-            timer:sleep(S#conn_settings.reconn_delay),
-            io:format("Reconnecting to ~p.~n", [Destination])
+            timer:sleep(S#conn_settings.reconn_delay)
+            %io:format("Reconnecting to ~p.~n", [Destination])
     end.
 
 
 discover_best_endpoint(S, SeedNodes, {Ip, Port}) ->
     NotFailedPred = fun(N) -> N#node.tcp_ip =/= Ip orelse N#node.tcp_port =/= Port end,
     NotFailedNodes = lists:filter(NotFailedPred, SeedNodes),
-    io:format("discover_best_endpoint NotFailedNodes:~n~p~n", [NotFailedNodes]),
+    %io:format("discover_best_endpoint NotFailedNodes:~n~p~n", [NotFailedNodes]),
     discover_best_endpoint(S, NotFailedNodes, none);
 
 discover_best_endpoint(S, SeedNodes, none) ->
     Seeds = arrange_gossip_candidates(SeedNodes),
-    io:format("discover_best_endpoint ArrangedSeeds:~n~p~n", [Seeds]),
+    %io:format("discover_best_endpoint ArrangedSeeds:~n~p~n", [Seeds]),
     case get_gossip(Seeds, S#conn_settings.gossip_timeout) of
         {ok, Winner, Members} -> {ok, Winner, Members};
         {error, Reason}       -> {error, Reason}
@@ -292,32 +292,32 @@ get_gossip([], _Timeout) -> {error, no_more_seeds};
 get_gossip([{Ip, Port} | SeedNodesTail], Timeout) ->
     case get_gossip(Ip, Port, Timeout) of
         {ok, []}         ->
-            io:format("get_gossip Members: EMPTY~n"),
+            %io:format("get_gossip Members: EMPTY~n"),
             get_gossip(SeedNodesTail, Timeout);
         {ok, Members}    ->
-            io:format("get_gossip Members: ~p~n", [Members]),
+            %io:format("get_gossip Members: ~p~n", [Members]),
             Ranked = lists:sort(fun(X, Y) -> rank_state(X#node.state) =< rank_state(Y#node.state) end,
                                 [M || M <- Members, rank_state(M#node.state) > 0]),
-            io:format("get_gossip Ranked: ~p~n", [Ranked]),
+            %io:format("get_gossip Ranked: ~p~n", [Ranked]),
             case Ranked of
                 []           -> get_gossip(SeedNodesTail, Timeout);
                 [N | _Other] -> {ok, {N#node.tcp_ip, N#node.tcp_port}, Members}
             end;
         {error, _Reason} ->
-            io:format("get_gossip FAILED: ~p~n", [_Reason]),
+            %io:format("get_gossip FAILED: ~p~n", [_Reason]),
             get_gossip(SeedNodesTail, Timeout)
     end.
 
 
 get_gossip(Ip, Port, Timeout) ->
     Url = lists:flatten(io_lib:format("http://~s:~B/gossip?format=json", [inet_parse:ntoa(Ip), Port])),
-    io:format("Getting gossip from ~p~n", [Url]),
+    %io:format("Getting gossip from ~p~n", [Url]),
     case httpc:request(get, {Url, []}, [{timeout, Timeout}], [{body_format, binary}]) of
         {ok, {{_Version, 200, _StatusDesc}, _Headers, Data}} ->
             Json = jsx:decode(Data),
             JsonMembers = proplists:get_value(<<"members">>, Json),
             AllMembers = [get_member(M) || M <- JsonMembers],
-            io:format("got_gossip ~p~n", [AllMembers]),
+            %io:format("got_gossip ~p~n", [AllMembers]),
             {ok, [Node || {Alive, Node} <- AllMembers, Alive]};
         {ok, {{_Version, StatusCode, StatusDesc}, _Headers, _Data}} ->
             {error, {http_error, StatusCode, StatusDesc}};
