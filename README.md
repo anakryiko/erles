@@ -123,8 +123,8 @@ Most erles functions exist in at least two forms:
 
   - short one with sensible defaults;
 
-  - and the long one takes a list of additional options that modify or enhance
-    operation behavior.
+  - the long one, which takes a list of additional options that modify or
+    enhance operation behavior.
 
 **Connection operation** accepts the following options:
 
@@ -306,6 +306,7 @@ function:
 -spec append(pid(), stream_id(), exp_ver(), [event_data()]) ->
         {'ok', stream_ver()} | {'error', write_error()}.
 ```
+
 Where parameters (in order) are:
 
   1. erles connection PID (returned from `connect/2` function).
@@ -329,11 +330,11 @@ Where parameters (in order) are:
         }).
 ```
 
-     The two required fields are `event_type` and `data`. `event_id`, if not
-     specified, will be set to newly generated UUID, `metadata` will be empty
-     and data type will be assumed to be `raw` (not structured). If you are
-     writing valid JSON as data, you should set `data_type` to `json`, so
-     Event Store's projections will know how to work with event data.
+The two required fields are `event_type` and `data`. `event_id`, if not
+specified, will be set to newly generated UUID, `metadata` will be empty
+and data type will be assumed to be `raw` (not structured). If you are
+writing valid JSON as data, you should set `data_type` to `json`, so
+Event Store's projections will know how to work with event data.
 
 In case of success, the new expected version of stream is returned (that should
 be used with consequent writes to same stream).
